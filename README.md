@@ -4,4 +4,5 @@
 
 A Tinder-like swiping interface for trimming down a YouTube playlist (e.g. Watch Later).
 
-See [docs/design.md](docs/design.md) for the full design and API notes.
+- [docs/design.md](docs/design.md) — product spec and API notes
+- [docs/implementation-plan.md](docs/implementation-plan.md) — tech stack, infra setup, and milestones
