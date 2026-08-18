@@ -1,18 +1,14 @@
-import { render, fireEvent, screen } from '@solidjs/testing-library'
+import { render, screen } from '@solidjs/testing-library'
 import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('App', () => {
-  it('updates the DOM when the counter signal changes', async () => {
+  it('renders the triage heading and eventually a card', async () => {
     render(() => <App />)
 
-    const button = screen.getByRole('button', { name: /count is 0/i })
-    expect(button).toBeInTheDocument()
-
-    await fireEvent.click(button)
-
-    expect(
-      screen.getByRole('button', { name: /count is 1/i }),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /triage/i })).toBeInTheDocument()
+    expect((await screen.findAllByTestId('video-card')).length).toBeGreaterThan(
+      0,
+    )
   })
 })
