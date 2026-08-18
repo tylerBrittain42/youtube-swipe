@@ -153,4 +153,38 @@ describe('CardStack', () => {
     await fireEvent.keyDown(window, { key: 'ArrowRight' })
     await waitFor(() => expect(remainingCount()).toHaveTextContent('1 left'))
   })
+
+  it('ignores Undo while a swipe is mid-flight, so it cannot mutate the queue mid-decision', async () => {
+    render(() => <CardStack />)
+    await screen.findByText('A')
+
+    // Decide A first, so history is non-empty by the time we try to undo.
+    await fireEvent.keyDown(window, { key: 'ArrowRight' })
+    await waitFor(() => expect(remainingCount()).toHaveTextContent('2 left'))
+
+    // Start B's swipe (its decide() won't land for another 220ms), then
+    // immediately try to undo via the Ctrl+Z shortcut — unlike a click,
+    // it isn't blocked by the Undo button's disabled attribute. Without a
+    // guard, undo's setQueue prepends A back onto the queue right away
+    // (a synchronous signal write), which we can observe immediately
+    // without waiting for B's animation to finish.
+    await fireEvent.keyDown(window, { key: 'ArrowRight' })
+    await fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
+
+    expect(remainingCount()).toHaveTextContent('2 left')
+  })
+
+  it('prevents default browser behavior for handled arrow keys', async () => {
+    render(() => <CardStack />)
+    await screen.findByText('A')
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowUp',
+      cancelable: true,
+      bubbles: true,
+    })
+    window.dispatchEvent(event)
+
+    expect(event.defaultPrevented).toBe(true)
+  })
 })

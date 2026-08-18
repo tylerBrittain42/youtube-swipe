@@ -14,9 +14,12 @@ interface VideoCardProps {
   onSwipe: (direction: SwipeDirection) => void
   /** Set by a parent to trigger the fly-away animation programmatically (keyboard/buttons). */
   triggerDirection?: SwipeDirection | null
+  /** Fires the moment a fly-away animation begins, from any source (drag or programmatic). */
+  onSwipeStart?: () => void
 }
 
 type Offset = { x: number; y: number }
+type AnimationState = 'idle' | 'flying' | 'snapping'
 
 function resolveDirection(
   x: number,
@@ -36,7 +39,7 @@ function resolveDirection(
 export default function VideoCard(props: VideoCardProps) {
   const [offset, setOffset] = createSignal<Offset>({ x: 0, y: 0 })
   const [dragging, setDragging] = createSignal(false)
-  const [animating, setAnimating] = createSignal(false)
+  const [animation, setAnimation] = createSignal<AnimationState>('idle')
 
   let startX = 0
   let startY = 0
@@ -44,7 +47,7 @@ export default function VideoCard(props: VideoCardProps) {
   let pointerId: number | null = null
 
   function onPointerDown(e: PointerEvent) {
-    if (!props.active || animating()) return
+    if (!props.active || animation() !== 'idle') return
     pointerId = e.pointerId
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
     startX = e.clientX
@@ -73,8 +76,17 @@ export default function VideoCard(props: VideoCardProps) {
     }
   }
 
+  /** A cancelled gesture (app switch, device interruption) is never a decision. */
+  function onPointerCancelHandler(e: PointerEvent) {
+    if (!dragging() || e.pointerId !== pointerId) return
+    setDragging(false)
+    pointerId = null
+    snapBack()
+  }
+
   function flyAway(direction: SwipeDirection) {
-    setAnimating(true)
+    setAnimation('flying')
+    props.onSwipeStart?.()
     const target: Offset =
       direction === 'up'
         ? { x: offset().x, y: -FLY_DISTANCE }
@@ -87,20 +99,23 @@ export default function VideoCard(props: VideoCardProps) {
   }
 
   function snapBack() {
-    setAnimating(true)
+    setAnimation('snapping')
     setOffset({ x: 0, y: 0 })
-    setTimeout(() => setAnimating(false), SNAP_TRANSITION_MS)
+    setTimeout(() => setAnimation('idle'), SNAP_TRANSITION_MS)
   }
 
   createEffect(() => {
     const direction = props.triggerDirection
-    if (!direction || !props.active || dragging() || animating()) return
+    if (!direction || !props.active || dragging() || animation() !== 'idle')
+      return
     flyAway(direction)
   })
 
   const rotation = () => offset().x / 20
-  const transitionMs = () =>
-    dragging() ? 0 : animating() ? FLY_TRANSITION_MS : SNAP_TRANSITION_MS
+  const transitionMs = () => {
+    if (dragging()) return 0
+    return animation() === 'flying' ? FLY_TRANSITION_MS : SNAP_TRANSITION_MS
+  }
   const stackScale = () => 1 - props.stackIndex * 0.04
   const stackTranslateY = () => props.stackIndex * 12
 
@@ -131,7 +146,8 @@ export default function VideoCard(props: VideoCardProps) {
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerCancel={onPointerCancelHandler}
+      aria-hidden={props.active ? undefined : 'true'}
       data-testid="video-card"
       data-video-id={props.video.id}
     >

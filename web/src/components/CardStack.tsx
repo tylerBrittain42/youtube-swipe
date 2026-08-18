@@ -29,6 +29,10 @@ export default function CardStack() {
   const [history, setHistory] = createSignal<HistoryEntry[]>([])
   const [pendingDirection, setPendingDirection] =
     createSignal<SwipeDirection | null>(null)
+  // True from the moment ANY fly-away animation starts (drag-released or
+  // programmatic) until its decision lands, so Undo can't mutate the queue
+  // out from under an in-flight card.
+  const [swiping, setSwiping] = createSignal(false)
 
   onMount(async () => {
     const videos = await fetchVideos()
@@ -49,10 +53,12 @@ export default function CardStack() {
       setHistory((h) => [...h, { video, decision }])
       setQueue((q) => q.slice(1))
       setPendingDirection(null)
+      setSwiping(false)
     })
   }
 
   function undo() {
+    if (swiping()) return
     const entries = history()
     const last = entries[entries.length - 1]
     if (!last) return
@@ -62,17 +68,26 @@ export default function CardStack() {
 
   /** Animates the top card away, then hands off to `decide` once it clears the screen. */
   function trigger(direction: SwipeDirection) {
-    if (queue().length === 0 || pendingDirection()) return
+    if (queue().length === 0 || swiping()) return
+    setSwiping(true)
     setPendingDirection(direction)
   }
 
   function onKeyDown(e: KeyboardEvent) {
     if (e.repeat) return
     if (e.target instanceof HTMLElement && e.target.tagName === 'BUTTON') return
-    if (e.key === 'ArrowLeft') trigger('left')
-    else if (e.key === 'ArrowRight') trigger('right')
-    else if (e.key === 'ArrowUp') trigger('up')
-    else if (e.key.toLowerCase() === 'z' && (e.metaKey || e.ctrlKey)) undo()
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault()
+      trigger('left')
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault()
+      trigger('right')
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      trigger('up')
+    } else if (e.key.toLowerCase() === 'z' && (e.metaKey || e.ctrlKey)) {
+      undo()
+    }
   }
 
   onMount(() => window.addEventListener('keydown', onKeyDown))
@@ -106,6 +121,7 @@ export default function CardStack() {
                   stackIndex={i()}
                   onSwipe={decide}
                   triggerDirection={i() === 0 ? pendingDirection() : null}
+                  onSwipeStart={() => setSwiping(true)}
                 />
               )}
             </For>
@@ -114,11 +130,24 @@ export default function CardStack() {
       </div>
 
       <div class="flex flex-col items-center gap-3">
+        <button
+          type="button"
+          onClick={() => trigger('up')}
+          disabled={visible().length === 0 || swiping()}
+          aria-label="Watch now"
+          class="flex items-center gap-1.5 rounded-full border-2 border-sky-300 px-4 py-1.5 text-sm font-medium text-sky-600 enabled:hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="currentColor">
+            <path d="M6 4l14 8-14 8V4z" />
+          </svg>
+          Watch now
+        </button>
+
         <div class="flex items-center gap-5">
           <button
             type="button"
             onClick={() => trigger('left')}
-            disabled={visible().length === 0 || pendingDirection() !== null}
+            disabled={visible().length === 0 || swiping()}
             aria-label="Move to reject playlist"
             class="flex h-14 w-14 items-center justify-center rounded-full border-2 border-rose-300 text-rose-500 enabled:hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -137,7 +166,7 @@ export default function CardStack() {
           <button
             type="button"
             onClick={undo}
-            disabled={history().length === 0}
+            disabled={history().length === 0 || swiping()}
             class="rounded-full border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 enabled:hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Undo
@@ -146,7 +175,7 @@ export default function CardStack() {
           <button
             type="button"
             onClick={() => trigger('right')}
-            disabled={visible().length === 0 || pendingDirection() !== null}
+            disabled={visible().length === 0 || swiping()}
             aria-label="Keep"
             class="flex h-14 w-14 items-center justify-center rounded-full border-2 border-emerald-300 text-emerald-500 enabled:hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
           >
