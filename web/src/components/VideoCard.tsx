@@ -1,4 +1,4 @@
-import { Show, createSignal } from 'solid-js'
+import { Show, createEffect, createSignal } from 'solid-js'
 import type { SwipeDirection, Video } from '../types'
 
 const DISTANCE_THRESHOLD = 120
@@ -12,6 +12,8 @@ interface VideoCardProps {
   active: boolean
   stackIndex: number
   onSwipe: (direction: SwipeDirection) => void
+  /** Set by a parent to trigger the fly-away animation programmatically (keyboard/buttons). */
+  triggerDirection?: SwipeDirection | null
 }
 
 type Offset = { x: number; y: number }
@@ -90,6 +92,12 @@ export default function VideoCard(props: VideoCardProps) {
     setTimeout(() => setAnimating(false), SNAP_TRANSITION_MS)
   }
 
+  createEffect(() => {
+    const direction = props.triggerDirection
+    if (!direction || !props.active || dragging() || animating()) return
+    flyAway(direction)
+  })
+
   const rotation = () => offset().x / 20
   const transitionMs = () =>
     dragging() ? 0 : animating() ? FLY_TRANSITION_MS : SNAP_TRANSITION_MS
@@ -101,11 +109,9 @@ export default function VideoCard(props: VideoCardProps) {
       ? `translate(${offset().x}px, ${offset().y}px) rotate(${rotation()}deg)`
       : `translateY(${stackTranslateY()}px) scale(${stackScale()})`
 
-  const overlayLabel = (): 'KEEP' | 'MOVE' | 'WATCH' | null => {
+  const overlayLabel = (): 'WATCH' | null => {
     const { x, y } = offset()
     if (-y > Math.abs(x) && -y > 40) return 'WATCH'
-    if (x > 40) return 'KEEP'
-    if (x < -40) return 'MOVE'
     return null
   }
   const overlayOpacity = () => {
@@ -147,12 +153,7 @@ export default function VideoCard(props: VideoCardProps) {
       <Show when={props.active && overlayLabel()}>
         {(label) => (
           <div
-            class="absolute top-6 left-6 rounded-lg border-4 px-3 py-1 text-2xl font-bold uppercase"
-            classList={{
-              'border-emerald-500 text-emerald-500': label() === 'KEEP',
-              'border-rose-500 text-rose-500': label() === 'MOVE',
-              'border-sky-500 text-sky-500': label() === 'WATCH',
-            }}
+            class="absolute top-6 left-6 rounded-lg border-4 border-sky-500 px-3 py-1 text-2xl font-bold text-sky-500 uppercase"
             style={{ opacity: overlayOpacity() }}
           >
             {label()}
