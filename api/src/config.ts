@@ -8,12 +8,17 @@ export interface Config {
   port: number
   databasePath: string
   syncTtlMs: number
+  /** The "reject" playlist a left-swipe moves videos into. Move path is off if unset. */
+  downstreamPlaylistId: string | null
+  /** Daily YouTube Data API budget the mover is allowed to spend (10k total; leave read headroom). */
+  quotaLimit: number
 }
 
 const DEFAULT_REDIRECT_URI = 'http://localhost:8080/api/auth/callback'
 const DEFAULT_PORT = 8080
 const DEFAULT_DATABASE_PATH = 'data/app.sqlite'
 const DEFAULT_SYNC_TTL_MS = 10 * 60 * 1000
+const DEFAULT_QUOTA_LIMIT = 9500
 
 function required(name: string): string {
   const value = process.env[name]
@@ -38,5 +43,7 @@ export function loadConfig(): Config {
     port: Number(process.env.PORT) || DEFAULT_PORT,
     databasePath: process.env.DATABASE_PATH || DEFAULT_DATABASE_PATH,
     syncTtlMs: Number(process.env.SYNC_TTL_MS) || DEFAULT_SYNC_TTL_MS,
+    downstreamPlaylistId: process.env.DOWNSTREAM_PLAYLIST_ID || null,
+    quotaLimit: Number(process.env.YOUTUBE_QUOTA_LIMIT) || DEFAULT_QUOTA_LIMIT,
   }
 }

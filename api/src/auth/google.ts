@@ -8,8 +8,23 @@ import type { Config } from '../config.ts'
 export type OAuth2Client = InstanceType<typeof google.auth.OAuth2>
 type Credentials = OAuth2Client['credentials']
 
-/** YouTube read-only access is all M2 needs; the write scope comes in M4. */
-export const SCOPES = ['https://www.googleapis.com/auth/youtube.readonly']
+/**
+ * `youtube.force-ssl` grants both read and the playlist writes M4 needs. Users
+ * who authorized under M2's `youtube.readonly` must re-run /api/auth/login.
+ */
+export const SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
+
+const WRITE_SCOPES = [
+  'https://www.googleapis.com/auth/youtube.force-ssl',
+  'https://www.googleapis.com/auth/youtube',
+]
+
+/** Whether the stored grant can modify playlists (not just read them). */
+export function hasWriteScope(scope: string | null | undefined): boolean {
+  if (!scope) return false
+  const granted = scope.split(/\s+/)
+  return WRITE_SCOPES.some((s) => granted.includes(s))
+}
 
 /** Thrown by the sync/YouTube layer when there is no stored OAuth token. */
 export class NotAuthenticatedError extends Error {

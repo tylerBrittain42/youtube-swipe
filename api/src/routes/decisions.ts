@@ -5,6 +5,7 @@ import {
   recordDecision,
   undoLastDecision,
 } from '../decisions.ts'
+import { enqueueMove, enqueueRevert } from '../move-queue.ts'
 
 export function registerDecisionsRoute(
   app: FastifyInstance,
@@ -28,12 +29,26 @@ export function registerDecisionsRoute(
       }
 
       recordDecision(ctx.db, videoId, action)
+
+      if (action === 'move') {
+        const queued = enqueueMove(ctx.db, ctx.config, videoId)
+        if (queued === null) {
+          req.log.warn(
+            { videoId },
+            'move not queued: no downstream playlist configured, or video not in cache',
+          )
+        }
+      }
+
       return reply.send({ ok: true })
     },
   )
 
   app.post('/api/decisions/undo', (_req, reply) => {
     const undone = undoLastDecision(ctx.db)
+    if (undone?.action === 'move') {
+      enqueueRevert(ctx.db, undone.videoId)
+    }
     return reply.send({ undone })
   })
 }

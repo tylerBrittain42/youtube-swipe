@@ -10,6 +10,20 @@ export interface Video {
 
 export type Decision = 'keep' | 'move' | 'watch'
 
+/**
+ * The subset of `GET /api/health` the web UI consumes — hand-written against the
+ * API, not shared. The endpoint also returns `playlistId`, `lastSyncedAt`, and
+ * `decisionCount`, which the UI doesn't use.
+ */
+export interface Health {
+  status: string
+  authenticated: boolean
+  writeEnabled: boolean
+  downstreamPlaylistId: string | null
+  moveQueue: { pending: number; failed: number }
+  quota: { usedToday: number; limit: number }
+}
+
 export type SwipeDirection = 'left' | 'right' | 'up'
 
 export function directionToDecision(direction: SwipeDirection): Decision {

@@ -204,8 +204,8 @@ Build the whole frontend before touching Google. Serve `GET /api/videos` from a 
   duplicates rather than loses a video.
 - Idempotency: retrying a move must not double-insert. Track per-move state, not just "pending/done".
 - Quota tracking + graceful degradation when exhausted.
-- **Done when:** a right-swipe actually relocates the video in YouTube, and killing the server mid-queue
-  loses nothing.
+- **Done when:** a left swipe (the "move" decision) actually relocates the video in YouTube, and
+  killing the server mid-queue loses nothing.
 
 ### M5 — Polish
 - Playlist picker for source + downstream, persisted.

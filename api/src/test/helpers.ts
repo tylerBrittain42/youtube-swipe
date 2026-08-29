@@ -13,6 +13,8 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     port: 0,
     databasePath: ':memory:',
     syncTtlMs: 10 * 60 * 1000,
+    downstreamPlaylistId: 'PL_DOWNSTREAM',
+    quotaLimit: 10000,
     ...overrides,
   }
 }
@@ -145,6 +147,155 @@ export function seedDecision(
       'INSERT INTO decisions (video_id, action, decided_at) VALUES (?, ?, ?)',
     )
     .run(videoId, action, Date.now())
+}
+
+export function seedToken(
+  ctx: AppContext,
+  scope = 'https://www.googleapis.com/auth/youtube.force-ssl',
+): void {
+  ctx.db
+    .prepare(
+      `INSERT INTO oauth_token (id, refresh_token, scope, updated_at)
+       VALUES (1, 'rt', ?, ?)
+       ON CONFLICT (id) DO UPDATE SET scope = excluded.scope`,
+    )
+    .run(scope, Date.now())
+}
+
+export function seedMoveOp(
+  ctx: AppContext,
+  row: {
+    videoId: string
+    target: string
+    remove: string
+    kind?: 'move' | 'revert'
+    state?: 'pending' | 'done' | 'failed' | 'superseded'
+    attempts?: number
+  },
+): number {
+  const now = Date.now()
+  const info = ctx.db
+    .prepare(
+      `INSERT INTO move_queue (video_id, target_playlist_id, remove_playlist_id, kind, state, attempts, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      row.videoId,
+      row.target,
+      row.remove,
+      row.kind ?? 'move',
+      row.state ?? 'pending',
+      row.attempts ?? 0,
+      now,
+      now,
+    )
+  return Number(info.lastInsertRowid)
+}
+
+/**
+ * A YouTube fake that models playlist membership in memory, so `playlistItems`
+ * list/insert/delete behave like the real API for the mover.
+ */
+export function fakeYoutubePlaylists(initial: Record<string, string[]> = {}): {
+  client: youtube_v3.Youtube
+  playlists: Record<string, string[]>
+  calls: { list: number; insert: number; delete: number }
+  failNext: (op: 'list' | 'insert' | 'delete') => void
+} {
+  const playlists: Record<string, string[]> = {}
+  for (const [k, v] of Object.entries(initial)) playlists[k] = [...v]
+  const calls = { list: 0, insert: 0, delete: 0 }
+  const fail = { list: 0, insert: 0, delete: 0 }
+
+  const itemId = (playlistId: string, videoId: string) =>
+    `pli:${playlistId}:${videoId}`
+  const parseItemId = (id: string) => {
+    const [, playlistId, videoId] = id.split(':')
+    return { playlistId, videoId }
+  }
+
+  const client = {
+    playlistItems: {
+      list: async (params: { playlistId?: string; videoId?: string }) => {
+        calls.list++
+        if (fail.list > 0) {
+          fail.list--
+          throw new Error('list boom')
+        }
+        const ids = playlists[params.playlistId ?? ''] ?? []
+        const match = params.videoId
+          ? ids.filter((v) => v === params.videoId)
+          : ids
+        return {
+          data: {
+            items: match.map((v) => ({
+              id: itemId(params.playlistId ?? '', v),
+              snippet: {
+                resourceId: { kind: 'youtube#video', videoId: v },
+              },
+            })),
+          },
+        }
+      },
+      insert: async (params: {
+        requestBody?: {
+          snippet?: { playlistId?: string; resourceId?: { videoId?: string } }
+        }
+      }) => {
+        calls.insert++
+        if (fail.insert > 0) {
+          fail.insert--
+          throw new Error('insert boom')
+        }
+        const pid = params.requestBody?.snippet?.playlistId ?? ''
+        const vid = params.requestBody?.snippet?.resourceId?.videoId ?? ''
+        playlists[pid] = playlists[pid] ?? []
+        playlists[pid].push(vid)
+        return { data: { id: itemId(pid, vid) } }
+      },
+      delete: async (params: { id?: string }) => {
+        calls.delete++
+        if (fail.delete > 0) {
+          fail.delete--
+          // A concurrent delete of the same item is the realistic delete
+          // failure — the mover should swallow it.
+          const err = new Error('Playlist item not found') as Error & {
+            code: number
+          }
+          err.code = 404
+          throw err
+        }
+        const { playlistId, videoId } = parseItemId(params.id ?? '')
+        const list = playlists[playlistId]
+        if (!list) {
+          const err = new Error('Playlist item not found') as Error & {
+            code: number
+          }
+          err.code = 404
+          throw err
+        }
+        const idx = list.indexOf(videoId)
+        if (idx === -1) {
+          const err = new Error('Playlist item not found') as Error & {
+            code: number
+          }
+          err.code = 404
+          throw err
+        }
+        list.splice(idx, 1)
+        return { data: {} }
+      },
+    },
+  } as unknown as youtube_v3.Youtube
+
+  return {
+    client,
+    playlists,
+    calls,
+    failNext: (op) => {
+      fail[op]++
+    },
+  }
 }
 
 export function markSynced(

@@ -44,6 +44,28 @@ CREATE TABLE IF NOT EXISTS decisions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_decisions_video ON decisions (video_id);
+
+CREATE TABLE IF NOT EXISTS move_queue (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id           TEXT NOT NULL,
+  target_playlist_id TEXT NOT NULL,
+  remove_playlist_id TEXT NOT NULL,
+  kind               TEXT NOT NULL CHECK (kind IN ('move', 'revert')),
+  state              TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (state IN ('pending', 'done', 'failed', 'superseded')),
+  attempts           INTEGER NOT NULL DEFAULT 0,
+  last_error         TEXT,
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_move_queue_state ON move_queue (state, id);
+CREATE INDEX IF NOT EXISTS idx_move_queue_video ON move_queue (video_id);
+
+CREATE TABLE IF NOT EXISTS quota_usage (
+  day   TEXT PRIMARY KEY,
+  units INTEGER NOT NULL
+);
 `
 
 /**

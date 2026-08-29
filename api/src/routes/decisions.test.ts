@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../server.ts'
 import { countDecisions } from '../decisions.ts'
-import { makeContext } from '../test/helpers.ts'
+import { moveQueueStatus, nextPendingOp } from '../move-queue.ts'
+import { makeContext, seedVideo } from '../test/helpers.ts'
 
 async function app() {
   const ctx = makeContext()
@@ -43,6 +44,59 @@ describe('POST /api/decisions', () => {
       payload: { action: 'keep' },
     })
     expect(res.statusCode).toBe(400)
+  })
+})
+
+describe('move decisions and the move queue', () => {
+  it('queues a move op when a cached video is moved', async () => {
+    const { ctx, app: a } = await app()
+    seedVideo(ctx, { id: 'v1', position: 0, playlistId: 'PL_TEST' })
+
+    await a.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: { videoId: 'v1', action: 'move' },
+    })
+
+    expect(nextPendingOp(ctx.db)).toMatchObject({
+      videoId: 'v1',
+      kind: 'move',
+      targetPlaylistId: 'PL_DOWNSTREAM',
+      removePlaylistId: 'PL_TEST',
+    })
+  })
+
+  it('does not queue anything for keep or watch', async () => {
+    const { ctx, app: a } = await app()
+    seedVideo(ctx, { id: 'v1', position: 0 })
+
+    for (const action of ['keep', 'watch']) {
+      await a.inject({
+        method: 'POST',
+        url: '/api/decisions',
+        payload: { videoId: 'v1', action },
+      })
+    }
+    expect(moveQueueStatus(ctx.db)).toEqual({ pending: 0, failed: 0 })
+  })
+
+  it('queues a revert when a move decision is undone', async () => {
+    const { ctx, app: a } = await app()
+    seedVideo(ctx, { id: 'v1', position: 0, playlistId: 'PL_TEST' })
+
+    await a.inject({
+      method: 'POST',
+      url: '/api/decisions',
+      payload: { videoId: 'v1', action: 'move' },
+    })
+    await a.inject({ method: 'POST', url: '/api/decisions/undo' })
+
+    expect(nextPendingOp(ctx.db)).toMatchObject({
+      videoId: 'v1',
+      kind: 'revert',
+      targetPlaylistId: 'PL_TEST',
+      removePlaylistId: 'PL_DOWNSTREAM',
+    })
   })
 })
 

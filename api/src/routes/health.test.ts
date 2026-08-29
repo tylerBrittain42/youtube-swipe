@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../server.ts'
-import { makeContext, markSynced, seedDecision } from '../test/helpers.ts'
+import {
+  makeContext,
+  markSynced,
+  seedDecision,
+  seedToken,
+} from '../test/helpers.ts'
 
 describe('GET /api/health', () => {
   it('reports unauthenticated with no sync when the DB is empty', async () => {
@@ -13,9 +18,13 @@ describe('GET /api/health', () => {
     expect(res.json()).toEqual({
       status: 'ok',
       authenticated: false,
+      writeEnabled: false,
       playlistId: 'PL_TEST',
+      downstreamPlaylistId: 'PL_DOWNSTREAM',
       lastSyncedAt: null,
       decisionCount: 0,
+      moveQueue: { pending: 0, failed: 0 },
+      quota: { usedToday: 0, limit: 10000 },
     })
   })
 
@@ -27,6 +36,22 @@ describe('GET /api/health', () => {
 
     const res = await app.inject({ method: 'GET', url: '/api/health' })
     expect(res.json().decisionCount).toBe(2)
+  })
+
+  it('reports writeEnabled from the stored scope', async () => {
+    const ro = makeContext()
+    seedToken(ro, 'https://www.googleapis.com/auth/youtube.readonly')
+    const roRes = await (
+      await buildApp(ro, { logger: false })
+    ).inject({ method: 'GET', url: '/api/health' })
+    expect(roRes.json().writeEnabled).toBe(false)
+
+    const rw = makeContext()
+    seedToken(rw) // defaults to youtube.force-ssl
+    const rwRes = await (
+      await buildApp(rw, { logger: false })
+    ).inject({ method: 'GET', url: '/api/health' })
+    expect(rwRes.json().writeEnabled).toBe(true)
   })
 
   it('reports authenticated once a token is stored and a sync has run', async () => {
