@@ -1,6 +1,11 @@
 import { render, screen } from '@solidjs/testing-library'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { FIXTURE_VIDEOS } from './data/fixtures'
+
+vi.mock('./api/videos', () => ({
+  fetchVideos: vi.fn(async () => FIXTURE_VIDEOS),
+}))
 
 describe('App', () => {
   it('renders the triage heading and eventually a card', async () => {

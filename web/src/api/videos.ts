@@ -1,11 +1,13 @@
-import { FIXTURE_VIDEOS } from '../data/fixtures'
 import type { Video } from '../types'
 
 /**
- * Stands in for `GET /api/videos?limit=n` (see docs/implementation-plan.md §2).
- * Swapped for a real fetch in M2; the frontend contract shouldn't need to change.
+ * `GET /api/videos?limit=n` (see docs/implementation-plan.md §2). Served by the
+ * Fastify backend same-origin in prod, via the Vite dev proxy in development.
  */
 export async function fetchVideos(limit = 10): Promise<Video[]> {
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  return FIXTURE_VIDEOS.slice(0, limit)
+  const res = await fetch(`/api/videos?limit=${limit}`)
+  if (!res.ok) {
+    throw new Error(`GET /api/videos failed: ${res.status}`)
+  }
+  return (await res.json()) as Video[]
 }

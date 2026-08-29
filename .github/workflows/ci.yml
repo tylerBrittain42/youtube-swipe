@@ -6,85 +6,102 @@ on:
     branches: [main]
     paths:
       - 'web/**'
+      - 'api/**'
       - '.github/workflows/ci.yml'
   push:
     branches: [main]
     paths:
       - 'web/**'
+      - 'api/**'
       - '.github/workflows/ci.yml'
 
 jobs:
   format:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [web, api]
     defaults:
       run:
-        working-directory: web
+        working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
       - run: npm ci
       - run: npm run format:check
 
   lint:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [web, api]
     defaults:
       run:
-        working-directory: web
+        working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
       - run: npm ci
       - run: npm run lint
 
   typecheck:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [web, api]
     defaults:
       run:
-        working-directory: web
+        working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
       - run: npm ci
       - run: npm run typecheck
 
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [web, api]
     defaults:
       run:
-        working-directory: web
+        working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
       - run: npm ci
       - run: npm test
 
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [web, api]
     defaults:
       run:
-        working-directory: web
+        working-directory: ${{ matrix.package }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: web/package-lock.json
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
       - run: npm ci
       - run: npm run build
