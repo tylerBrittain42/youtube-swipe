@@ -10,10 +10,28 @@ import {
 import { quotaRemaining, spendQuota } from './quota.ts'
 
 export const MAX_ATTEMPTS = 5
-/** Upper bound on a single op: list + insert + list + delete. */
+/** Upper bound on a single op: list + insert + list + one delete. */
 export const OP_COST_ESTIMATE = 1 + 50 + 1 + 50
 
 export type MoveOutcome = 'done' | 'idle' | 'quota' | 'unauthed' | 'retry'
+
+/** Raised mid-op when the day's remaining quota can't cover the next call. */
+class QuotaExhaustedError extends Error {
+  constructor() {
+    super('daily YouTube quota exhausted')
+    this.name = 'QuotaExhaustedError'
+  }
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (typeof err === 'string') return err
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
+}
 
 function isNotFound(err: unknown): boolean {
   const e = err as {
@@ -44,39 +62,55 @@ async function videoItemsIn(
  * Reconciles one op: ensure the video is in `target`, then ensure it is not in
  * `remove`. Insert-before-delete, and every step re-checks membership, so a
  * crash or retry can only duplicate a video, never drop it, and never
- * double-inserts.
+ * double-inserts. Each billed call is budget-checked first, so a video with
+ * many duplicate entries can't push spend past `quotaLimit` — the op just
+ * stops and stays `pending` for the next drain.
  */
 async function reconcile(
   ctx: AppContext,
   yt: youtube_v3.Youtube,
   op: MoveOp,
 ): Promise<void> {
-  const inTarget = await videoItemsIn(yt, op.targetPlaylistId, op.videoId)
-  spendQuota(ctx.db, 1)
-
-  if (inTarget.length === 0) {
-    await yt.playlistItems.insert({
-      part: ['snippet'],
-      requestBody: {
-        snippet: {
-          playlistId: op.targetPlaylistId,
-          resourceId: { kind: 'youtube#video', videoId: op.videoId },
-        },
-      },
+  const charge = <T>(cost: number, run: () => Promise<T>): Promise<T> => {
+    if (quotaRemaining(ctx.db, ctx.config) < cost) {
+      throw new QuotaExhaustedError()
+    }
+    return run().then((v) => {
+      spendQuota(ctx.db, cost)
+      return v
     })
-    spendQuota(ctx.db, 50)
   }
 
-  const inRemove = await videoItemsIn(yt, op.removePlaylistId, op.videoId)
-  spendQuota(ctx.db, 1)
+  const inTarget = await charge(1, () =>
+    videoItemsIn(yt, op.targetPlaylistId, op.videoId),
+  )
+
+  if (inTarget.length === 0) {
+    await charge(50, () =>
+      yt.playlistItems.insert({
+        part: ['snippet'],
+        requestBody: {
+          snippet: {
+            playlistId: op.targetPlaylistId,
+            resourceId: { kind: 'youtube#video', videoId: op.videoId },
+          },
+        },
+      }),
+    )
+  }
+
+  const inRemove = await charge(1, () =>
+    videoItemsIn(yt, op.removePlaylistId, op.videoId),
+  )
 
   for (const itemId of inRemove) {
-    try {
-      await yt.playlistItems.delete({ id: itemId })
-    } catch (err) {
-      if (!isNotFound(err)) throw err
-    }
-    spendQuota(ctx.db, 50)
+    await charge(50, async () => {
+      try {
+        await yt.playlistItems.delete({ id: itemId })
+      } catch (err) {
+        if (!isNotFound(err)) throw err
+      }
+    })
   }
 }
 
@@ -96,7 +130,10 @@ export async function processNextOp(ctx: AppContext): Promise<MoveOutcome> {
     markOpDone(ctx.db, op.id)
     return 'done'
   } catch (err) {
-    bumpAttempt(ctx.db, op.id, (err as Error).message, MAX_ATTEMPTS)
+    // Running out of budget isn't a failure — leave the op pending, don't burn
+    // an attempt. Partial progress is safe because reconcile re-checks state.
+    if (err instanceof QuotaExhaustedError) return 'quota'
+    bumpAttempt(ctx.db, op.id, errorMessage(err), MAX_ATTEMPTS)
     return 'retry'
   }
 }

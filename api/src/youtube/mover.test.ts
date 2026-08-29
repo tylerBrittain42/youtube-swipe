@@ -127,4 +127,24 @@ describe('processNextOp', () => {
 
     expect(await processNextOp(ctx)).toBe('done')
   })
+
+  it('stops mid-op and never overshoots the budget with duplicate entries', async () => {
+    // list(1) + insert(50) + list(1) + delete(50) = 102 fits in 120; a second
+    // delete (another 50) does not.
+    const { ctx, yt } = setup(
+      { SRC: ['v1', 'v1', 'v1'], DEST: [] },
+      { quotaLimit: 120 },
+    )
+    const id = seedMoveOp(ctx, { videoId: 'v1', target: 'DEST', remove: 'SRC' })
+
+    expect(await processNextOp(ctx)).toBe('quota')
+    expect(quotaUsedToday(ctx.db)).toBeLessThanOrEqual(120)
+    expect(yt.playlists.DEST).toEqual(['v1']) // insert happened
+    expect(yt.playlists.SRC).toEqual(['v1', 'v1']) // one delete happened
+
+    const row = ctx.db
+      .prepare('SELECT state, attempts FROM move_queue WHERE id = ?')
+      .get(id) as { state: string; attempts: number }
+    expect(row).toEqual({ state: 'pending', attempts: 0 }) // no attempt burned
+  })
 })

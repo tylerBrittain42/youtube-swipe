@@ -10,7 +10,11 @@ export interface Video {
 
 export type Decision = 'keep' | 'move' | 'watch'
 
-/** Shape of `GET /api/health` — hand-written against the API, not shared. */
+/**
+ * The subset of `GET /api/health` the web UI consumes — hand-written against the
+ * API, not shared. The endpoint also returns `playlistId`, `lastSyncedAt`, and
+ * `decisionCount`, which the UI doesn't use.
+ */
 export interface Health {
   status: string
   authenticated: boolean
