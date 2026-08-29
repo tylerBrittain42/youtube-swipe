@@ -51,7 +51,10 @@ export function registerVideosRoute(
       const rows = ctx.db
         .prepare(
           `SELECT id, title, channel, duration, thumbnail_url, url
-           FROM videos WHERE playlist_id = ? ORDER BY position LIMIT ?`,
+           FROM videos
+           WHERE playlist_id = ?
+             AND id NOT IN (SELECT video_id FROM decisions)
+           ORDER BY position LIMIT ?`,
         )
         .all(ctx.config.playlistId, limit) as VideoRow[]
 

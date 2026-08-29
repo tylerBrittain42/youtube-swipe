@@ -35,6 +35,15 @@ CREATE TABLE IF NOT EXISTS sync_state (
   last_synced_at INTEGER NOT NULL,
   item_count     INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS decisions (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  video_id   TEXT NOT NULL,
+  action     TEXT NOT NULL CHECK (action IN ('keep', 'move', 'watch')),
+  decided_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_decisions_video ON decisions (video_id);
 `
 
 /**
@@ -46,7 +55,11 @@ export function openDb(path: string): DB {
     mkdirSync(dirname(path), { recursive: true })
   }
   const db = new Database(path)
-  db.pragma('journal_mode = WAL')
+  // Rollback-journal mode keeps the database as a single file at rest (a
+  // transient `-journal` appears only mid-write). This app is single-user and
+  // single-process, so WAL's concurrency wins don't apply. Setting it
+  // explicitly also converts an existing WAL database on first open.
+  db.pragma('journal_mode = DELETE')
   db.exec(SCHEMA)
   return db
 }

@@ -135,6 +135,18 @@ export function seedVideo(
     )
 }
 
+export function seedDecision(
+  ctx: AppContext,
+  videoId: string,
+  action: 'keep' | 'move' | 'watch' = 'keep',
+): void {
+  ctx.db
+    .prepare(
+      'INSERT INTO decisions (video_id, action, decided_at) VALUES (?, ?, ?)',
+    )
+    .run(videoId, action, Date.now())
+}
+
 export function markSynced(
   ctx: AppContext,
   playlistId = ctx.config.playlistId,
