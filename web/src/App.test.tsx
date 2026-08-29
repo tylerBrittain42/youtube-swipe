@@ -7,6 +7,11 @@ vi.mock('./api/videos', () => ({
   fetchVideos: vi.fn(async () => FIXTURE_VIDEOS),
 }))
 
+vi.mock('./api/decisions', () => ({
+  postDecision: vi.fn(async () => {}),
+  undoDecision: vi.fn(async () => {}),
+}))
+
 describe('App', () => {
   it('renders the triage heading and eventually a card', async () => {
     render(() => <App />)

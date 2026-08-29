@@ -4,6 +4,7 @@ import {
   fakeYoutube,
   makeContext,
   markSynced,
+  seedDecision,
   seedVideo,
 } from '../test/helpers.ts'
 
@@ -47,6 +48,19 @@ describe('GET /api/videos', () => {
       'title',
       'url',
     ])
+  })
+
+  it('excludes videos that already have a decision', async () => {
+    const { ctx, app } = await appWithYoutube(true)
+    markSynced(ctx)
+    seedVideo(ctx, { id: 'a', position: 0 })
+    seedVideo(ctx, { id: 'b', position: 1 })
+    seedVideo(ctx, { id: 'c', position: 2 })
+    seedDecision(ctx, 'b', 'move')
+
+    const res = await app.inject({ method: 'GET', url: '/api/videos' })
+
+    expect(res.json().map((v: { id: string }) => v.id)).toEqual(['a', 'c'])
   })
 
   it('clamps limit to 1..50 and defaults to 10', async () => {

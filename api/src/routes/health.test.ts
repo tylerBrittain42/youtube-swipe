@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { buildApp } from '../server.ts'
-import { makeContext, markSynced } from '../test/helpers.ts'
+import { makeContext, markSynced, seedDecision } from '../test/helpers.ts'
 
 describe('GET /api/health', () => {
   it('reports unauthenticated with no sync when the DB is empty', async () => {
@@ -15,7 +15,18 @@ describe('GET /api/health', () => {
       authenticated: false,
       playlistId: 'PL_TEST',
       lastSyncedAt: null,
+      decisionCount: 0,
     })
+  })
+
+  it('reports the decision count', async () => {
+    const ctx = makeContext()
+    seedDecision(ctx, 'v1', 'keep')
+    seedDecision(ctx, 'v2', 'move')
+    const app = await buildApp(ctx, { logger: false })
+
+    const res = await app.inject({ method: 'GET', url: '/api/health' })
+    expect(res.json().decisionCount).toBe(2)
   })
 
   it('reports authenticated once a token is stored and a sync has run', async () => {

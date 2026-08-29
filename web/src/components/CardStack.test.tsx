@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Video } from '../types'
 import CardStack from './CardStack'
+import { fetchVideos } from '../api/videos'
+import { postDecision, undoDecision } from '../api/decisions'
 
 const videos: Video[] = [
   {
@@ -34,9 +36,32 @@ vi.mock('../api/videos', () => ({
   fetchVideos: vi.fn(async () => videos),
 }))
 
+vi.mock('../api/decisions', () => ({
+  postDecision: vi.fn(async () => {}),
+  undoDecision: vi.fn(async () => {}),
+}))
+
 beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(fetchVideos).mockImplementation(async () => videos)
   vi.spyOn(window, 'open').mockImplementation(() => null)
 })
+
+function makeVideos(prefix: string, n: number): Video[] {
+  return Array.from({ length: n }, (_, i) => ({
+    id: `${prefix}${i}`,
+    title: `${prefix}${i}`,
+    channel: 'Ch',
+    duration: '1:00',
+    thumbnailUrl: '',
+    url: `https://x/${prefix}${i}`,
+  }))
+}
+
+async function swipe(key: string, toCount: string) {
+  await fireEvent.keyDown(window, { key })
+  await waitFor(() => expect(remainingCount()).toHaveTextContent(toCount))
+}
 
 function remainingCount() {
   return screen.getByTestId('remaining-count')
@@ -186,5 +211,50 @@ describe('CardStack', () => {
     window.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('persists each decision with its action', async () => {
+    render(() => <CardStack />)
+    await screen.findByText('A')
+
+    await swipe('ArrowRight', '2 left')
+    expect(postDecision).toHaveBeenCalledWith('a', 'keep')
+
+    await swipe('ArrowLeft', '1 left')
+    expect(postDecision).toHaveBeenCalledWith('b', 'move')
+
+    await swipe('ArrowUp', '0 left')
+    expect(postDecision).toHaveBeenCalledWith('c', 'watch')
+  })
+
+  it('calls the undo endpoint when a decision is reversed', async () => {
+    render(() => <CardStack />)
+    await screen.findByText('A')
+
+    await swipe('ArrowRight', '2 left')
+    await fireEvent.click(screen.getByRole('button', { name: /undo/i }))
+
+    await waitFor(() => expect(undoDecision).toHaveBeenCalledTimes(1))
+    expect(remainingCount()).toHaveTextContent('3 left')
+  })
+
+  it('prefetches the next batch once the deck runs low', async () => {
+    const batch1 = makeVideos('p', 10)
+    const batch2 = makeVideos('q', 2)
+    vi.mocked(fetchVideos)
+      .mockResolvedValueOnce(batch1)
+      .mockResolvedValueOnce(batch2)
+
+    render(() => <CardStack />)
+    await screen.findByText('p0')
+    expect(fetchVideos).toHaveBeenCalledTimes(1)
+
+    // 10 -> 3 remaining crosses the prefetch threshold (< 4).
+    for (let n = 9; n >= 3; n--) {
+      await swipe('ArrowRight', `${n} left`)
+    }
+
+    await waitFor(() => expect(fetchVideos).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(remainingCount()).toHaveTextContent('5 left'))
   })
 })
