@@ -2,6 +2,10 @@ import type { youtube_v3 } from 'googleapis'
 import type { AppContext } from '../context.ts'
 import { NotAuthenticatedError } from '../auth/google.ts'
 import { formatDuration } from '../lib/duration.ts'
+import { spendQuota } from './quota.ts'
+
+/** Records one billed API call. */
+type Spend = () => void
 
 const SKIP_TITLES = new Set([
   'Private video',
@@ -23,6 +27,7 @@ interface StagedItem {
 async function listPlaylistItems(
   yt: youtube_v3.Youtube,
   playlistId: string,
+  spend: Spend,
 ): Promise<StagedItem[]> {
   const items: StagedItem[] = []
   let pageToken: string | undefined
@@ -34,6 +39,7 @@ async function listPlaylistItems(
       maxResults: 50,
       pageToken,
     })
+    spend()
 
     for (const item of data.items ?? []) {
       const snippet = item.snippet
@@ -67,6 +73,7 @@ async function listPlaylistItems(
 async function fetchDurations(
   yt: youtube_v3.Youtube,
   videoIds: string[],
+  spend: Spend,
 ): Promise<Map<string, string>> {
   const durations = new Map<string, string>()
 
@@ -76,6 +83,7 @@ async function fetchDurations(
       part: ['contentDetails'],
       id: batch,
     })
+    spend()
     for (const video of data.items ?? []) {
       if (video.id) {
         durations.set(video.id, formatDuration(video.contentDetails?.duration))
@@ -97,10 +105,12 @@ export async function syncPlaylist(
   const yt = ctx.getYoutube()
   if (!yt) throw new NotAuthenticatedError()
 
-  const staged = await listPlaylistItems(yt, playlistId)
+  const spend: Spend = () => spendQuota(ctx.db, 1)
+  const staged = await listPlaylistItems(yt, playlistId, spend)
   const durations = await fetchDurations(
     yt,
     staged.map((s) => s.videoId),
+    spend,
   )
   const now = Date.now()
 

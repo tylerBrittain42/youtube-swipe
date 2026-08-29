@@ -16,6 +16,7 @@ import {
   type Video,
 } from '../types'
 import VideoCard from './VideoCard'
+import SyncStatus from './SyncStatus'
 
 const VISIBLE_STACK_SIZE = 3
 /** How many undecided videos to pull per request. */
@@ -256,6 +257,7 @@ export default function CardStack() {
         <span class="text-sm text-neutral-500" data-testid="remaining-count">
           {queue().length} left
         </span>
+        <SyncStatus />
       </div>
     </div>
   )

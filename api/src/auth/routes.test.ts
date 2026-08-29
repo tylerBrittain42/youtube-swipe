@@ -18,7 +18,7 @@ describe('OAuth routes', () => {
     const location = res.headers.location as string
     expect(location).toContain('accounts.google.com')
     expect(location).toContain('state=')
-    expect(location).toContain('youtube.readonly')
+    expect(location).toContain('youtube.force-ssl')
   })
 
   it('rejects a callback with an unknown state', async () => {

@@ -41,6 +41,17 @@ vi.mock('../api/decisions', () => ({
   undoDecision: vi.fn(async () => {}),
 }))
 
+vi.mock('../api/health', () => ({
+  fetchHealth: vi.fn(async () => ({
+    status: 'ok',
+    authenticated: true,
+    writeEnabled: true,
+    downstreamPlaylistId: 'PL_X',
+    moveQueue: { pending: 0, failed: 0 },
+    quota: { usedToday: 0, limit: 9500 },
+  })),
+}))
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(fetchVideos).mockImplementation(async () => videos)

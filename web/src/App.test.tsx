@@ -12,6 +12,17 @@ vi.mock('./api/decisions', () => ({
   undoDecision: vi.fn(async () => {}),
 }))
 
+vi.mock('./api/health', () => ({
+  fetchHealth: vi.fn(async () => ({
+    status: 'ok',
+    authenticated: true,
+    writeEnabled: true,
+    downstreamPlaylistId: null,
+    moveQueue: { pending: 0, failed: 0 },
+    quota: { usedToday: 0, limit: 9500 },
+  })),
+}))
+
 describe('App', () => {
   it('renders the triage heading and eventually a card', async () => {
     render(() => <App />)
