@@ -36,12 +36,16 @@ in SQLite (`data/app.sqlite`), and `GET /api/health` then reports
 
 ## Endpoints
 
-| Method | Path                 | Purpose                                      |
-| ------ | -------------------- | -------------------------------------------- |
-| GET    | `/api/health`        | Liveness + whether we're authenticated       |
-| GET    | `/api/auth/login`    | Redirect to Google consent                   |
-| GET    | `/api/auth/callback` | OAuth callback; stores the refresh token     |
-| GET    | `/api/videos?limit=` | Next _n_ playlist videos (1–50, default 10)  |
-| GET    | `/api/playlists`     | Your playlists + IDs, for picking the source |
+| Method | Path                  | Purpose                                                                          |
+| ------ | --------------------- | -------------------------------------------------------------------------------- |
+| GET    | `/api/health`         | Liveness, auth state, and `decisionCount`                                        |
+| GET    | `/api/auth/login`     | Redirect to Google consent                                                       |
+| GET    | `/api/auth/callback`  | OAuth callback; stores the refresh token                                         |
+| GET    | `/api/videos?limit=`  | Next _n_ **undecided** playlist videos (1–50, def 10)                            |
+| GET    | `/api/playlists`      | Your playlists + IDs, for picking the source                                     |
+| POST   | `/api/decisions`      | `{ videoId, action: "keep"\|"move"\|"watch" }` — records a decision (local only) |
+| POST   | `/api/decisions/undo` | Reverses the most recent decision                                                |
+
+Decisions are stored in SQLite only; nothing is written back to YouTube yet (that's M4).
 
 `.env` and `*.sqlite` are gitignored — never commit them.

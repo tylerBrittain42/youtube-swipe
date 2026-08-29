@@ -8,6 +8,7 @@ import {
   type JSX,
 } from 'solid-js'
 import { fetchVideos } from '../api/videos'
+import { postDecision, undoDecision } from '../api/decisions'
 import {
   directionToDecision,
   type Decision,
@@ -17,6 +18,10 @@ import {
 import VideoCard from './VideoCard'
 
 const VISIBLE_STACK_SIZE = 3
+/** How many undecided videos to pull per request. */
+const FETCH_BATCH = 10
+/** Prefetch the next batch once the local deck drops below this. */
+const PREFETCH_AT = 4
 
 interface HistoryEntry {
   video: Video
@@ -33,12 +38,47 @@ export default function CardStack() {
   // programmatic) until its decision lands, so Undo can't mutate the queue
   // out from under an in-flight card.
   const [swiping, setSwiping] = createSignal(false)
+  const [fetching, setFetching] = createSignal(false)
+  // No more undecided videos on the backend — stop prefetching.
+  const [exhausted, setExhausted] = createSignal(false)
+  const [error, setError] = createSignal(false)
+  // Video ids decided this session. Tracked locally so a still-in-flight
+  // `postDecision` can't let a just-swiped card reappear in a prefetch.
+  const decided = new Set<string>()
 
   onMount(async () => {
-    const videos = await fetchVideos()
-    setQueue(videos)
-    setLoading(false)
+    try {
+      const videos = await fetchVideos(FETCH_BATCH)
+      if (videos.length < FETCH_BATCH) setExhausted(true)
+      setQueue(videos)
+    } catch (err) {
+      console.error(err)
+      setError(true)
+    } finally {
+      setLoading(false)
+    }
   })
+
+  /** Appends the next batch of undecided videos, de-duping what we already hold. */
+  async function loadMore() {
+    if (fetching() || exhausted()) return
+    setFetching(true)
+    try {
+      const next = await fetchVideos(FETCH_BATCH)
+      if (next.length < FETCH_BATCH) setExhausted(true)
+      setQueue((q) => {
+        const seen = new Set(q.map((v) => v.id))
+        return [
+          ...q,
+          ...next.filter((v) => !seen.has(v.id) && !decided.has(v.id)),
+        ]
+      })
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setFetching(false)
+    }
+  }
 
   function decide(direction: SwipeDirection) {
     const video = queue()[0]
@@ -55,6 +95,13 @@ export default function CardStack() {
       setPendingDirection(null)
       setSwiping(false)
     })
+
+    decided.add(video.id)
+    // Fire-and-forget: the UI has already advanced. A failed save is logged
+    // and the card simply reappears on the next full refresh.
+    postDecision(video.id, decision).catch((err) => console.error(err))
+
+    if (queue().length < PREFETCH_AT) void loadMore()
   }
 
   function undo() {
@@ -64,6 +111,8 @@ export default function CardStack() {
     if (!last) return
     setHistory((h) => h.slice(0, -1))
     setQueue((q) => [last.video, ...q])
+    decided.delete(last.video.id)
+    undoDecision().catch((err) => console.error(err))
   }
 
   /** Animates the top card away, then hands off to `decide` once it clears the screen. */
@@ -99,32 +148,44 @@ export default function CardStack() {
     <div class="mx-auto flex w-full max-w-sm flex-col items-center gap-6">
       <div class="relative aspect-[3/4] w-full">
         <Show
-          when={!loading()}
-          fallback={<StatusPanel>Loading videos…</StatusPanel>}
+          when={!error()}
+          fallback={
+            <StatusPanel>
+              <p class="text-lg font-medium text-neutral-700">
+                Couldn’t load videos
+              </p>
+              <p class="text-sm">Check the backend, then refresh.</p>
+            </StatusPanel>
+          }
         >
           <Show
-            when={visible().length > 0}
-            fallback={
-              <StatusPanel>
-                <p class="text-lg font-medium text-neutral-700">
-                  All caught up
-                </p>
-                <p class="text-sm">{history().length} videos triaged</p>
-              </StatusPanel>
-            }
+            when={!loading()}
+            fallback={<StatusPanel>Loading videos…</StatusPanel>}
           >
-            <For each={visible()}>
-              {(video, i) => (
-                <VideoCard
-                  video={video}
-                  active={i() === 0}
-                  stackIndex={i()}
-                  onSwipe={decide}
-                  triggerDirection={i() === 0 ? pendingDirection() : null}
-                  onSwipeStart={() => setSwiping(true)}
-                />
-              )}
-            </For>
+            <Show
+              when={visible().length > 0}
+              fallback={
+                <StatusPanel>
+                  <p class="text-lg font-medium text-neutral-700">
+                    All caught up
+                  </p>
+                  <p class="text-sm">{history().length} videos triaged</p>
+                </StatusPanel>
+              }
+            >
+              <For each={visible()}>
+                {(video, i) => (
+                  <VideoCard
+                    video={video}
+                    active={i() === 0}
+                    stackIndex={i()}
+                    onSwipe={decide}
+                    triggerDirection={i() === 0 ? pendingDirection() : null}
+                    onSwipeStart={() => setSwiping(true)}
+                  />
+                )}
+              </For>
+            </Show>
           </Show>
         </Show>
       </div>

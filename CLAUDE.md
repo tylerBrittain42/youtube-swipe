@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `youtube-swipe` is a Tinder-like swipe UI for triaging a YouTube playlist. See
 [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md) for the
-full spec, stack rationale, and milestones. Currently in M2: real OAuth + read path.
+full spec, stack rationale, and milestones. Currently in M3: decisions persisted locally.
 
 ## Structure
 
@@ -41,7 +41,11 @@ Fastify serves the built `web/dist` same-origin.
   synced into SQLite and cards are served from there — don't call the YouTube API per request.
 - Log in once by visiting `http://localhost:8080/api/auth/login` in a browser; the refresh token
   persists in `api/data/app.sqlite`.
-- Decisions (`POST /api/decisions`) and the write path to YouTube are M3/M4 — not built yet.
+- Decisions are recorded locally only (`decisions` table, `POST /api/decisions` + `/undo`); `GET
+  /api/videos` filters out decided videos. The write path that actually moves videos in YouTube is
+  M4 — not built yet.
+- The frontend posts decisions fire-and-forget (`web/src/api/decisions.ts`); a failed save is logged
+  and the card reappears on the next refresh.
 
 ## Solid-specific rule
 
