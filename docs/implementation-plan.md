@@ -207,11 +207,59 @@ Build the whole frontend before touching Google. Serve `GET /api/videos` from a 
 - **Done when:** a left swipe (the "move" decision) actually relocates the video in YouTube, and
   killing the server mid-queue loses nothing.
 
-### M5 — Polish
-- Playlist picker for source + downstream, persisted.
-- Session summary ("42 kept, 17 moved").
+### M5 — UI polish & controls
+The app works but is bare: an unauthenticated user just sees "Loading…", the playlists are hard-coded
+env vars, and the deck order is fixed. This milestone makes it usable by someone who isn't holding the
+README.
+
+- **Login / re-auth button.** When `/api/health` reports `authenticated: false` — or `writeEnabled:
+  false` with a downstream playlist configured — render a "Connect YouTube" button linking to
+  `/api/auth/login`, instead of the app hanging on the loading state. Closes the gap carried since M2.
+- **Playlist dropdowns.** Two `<select>`s populated from `GET /api/playlists`: one for the source
+  playlist being triaged, one for the left-swipe ("move") destination. Selections persist server-side
+  in a new `settings` table (`GET` / `PUT /api/settings`); `YOUTUBE_PLAYLIST_ID` /
+  `DOWNSTREAM_PLAYLIST_ID` become the *initial seed*, after which the UI is the source of truth.
+  Changing the source triggers a re-sync; in-flight `move_queue` rows keep their snapshotted playlist
+  IDs and are unaffected.
+  - *Open question:* the design doc has right-swipe = "keep" (no move). If right-swipe should also
+    sort into a chosen playlist, that adds a second destination dropdown and changes
+    `directionToDecision` plus the move queue. Decide before building.
+- **Sort order.** `GET /api/videos` gains `?order=oldest|newest` — playlist position ascending vs.
+  descending ("first added" vs. "last added"). A toggle in the UI; the choice is persisted.
+- **Visual pass.** Spacing, header, card and button styling, transitions, mobile layout. No behavior
+  change — just make it look finished.
+- **Done when:** a fresh browser with no prior login can connect, pick both playlists, choose a sort
+  order, and triage — without touching `.env` or a terminal.
+  consider an advanced option panel that different apis can send
+
+### M6 — Polish & ship
+- Session summary ("42 kept, 17 moved") from the `decisions` table.
 - PWA manifest so it installs to your home screen.
-- Phone access via Tailscale.
+- Phone access via Tailscale (add the tailnet host to the OAuth redirect URIs).
+
+### Beyond M6 — multi-user (big-picture, not yet scheduled)
+
+Everything through M6 is deliberately **single-user**: one `oauth_token` row (`id = 1`), no session
+cookie, every table implicitly "the owner's". Supporting multiple people logging in is a real
+architecture shift, not a feature bolt-on — worth its own design pass. The surface area to hash out:
+
+- **Sessions.** A signed session cookie (or bearer token) issued at `/api/auth/callback`, identifying
+  the user on every request. Revives the third-party-cookie / same-origin question in §3 in earnest.
+- **Per-user OAuth tokens.** `oauth_token` becomes one row per user; `getAuthorizedClient` keys off the
+  session, not `id = 1`.
+- **Data isolation.** `videos`, `sync_state`, `decisions`, `move_queue`, `quota_usage`, and the M5
+  `settings` table each need a `user_id` (or a per-user DB). Every query gets scoped.
+- **Quota.** Google's 10k/day is *per OAuth client*, not per user — so the budget is now shared across
+  everyone. Per-user sub-budgets, or a global fair-share limiter in the mover.
+- **The mover.** One background worker draining a queue that now spans users; still one API client and
+  one quota pool.
+- **Consent screen.** Moving off "Testing" (100-user cap, and every user must be added as a test user)
+  toward verification, or staying invite-only.
+- **Hosting.** Localhost/Tailscale stops being enough; needs a real deployment with per-user secret
+  handling.
+
+Not blocking any milestone — captured here so the single-user shortcuts (`id = 1`, no `user_id`
+columns) are known debts, not surprises.
 
 ---
 
@@ -227,6 +275,8 @@ Build the whole frontend before touching Google. Serve `GET /api/videos` from a 
 | Third-party cookie blocking kills the session on mobile | Serve the static bundle same-origin from Fastify (§3). |
 | AI tools write React idioms that silently break Solid reactivity | `CLAUDE.md` rule + never destructure props (§1.2). |
 | Scope creep into recommendations/ML | The design doc is explicit that downstream is a no-op for now. Keep it that way. |
+| Right-swipe semantics unresolved (keep vs. sort into a playlist) | Settle in M5 before building the dropdowns — it changes `directionToDecision` and the move queue. |
+| Playlist settings drift from the SQLite cache (change source → stale `videos`) | Re-sync on source change; serve cards only after the sync completes. |
 
 ---
 
