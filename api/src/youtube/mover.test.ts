@@ -102,6 +102,16 @@ describe('processNextOp', () => {
     expect(nextPendingOp(ctx.db)).not.toBeNull()
   })
 
+  it('counts a billed call against quota even if it then fails', async () => {
+    const { ctx, yt } = setup({ SRC: ['v1'], DEST: [] })
+    seedMoveOp(ctx, { videoId: 'v1', target: 'DEST', remove: 'SRC' })
+    yt.failNext('insert')
+
+    expect(await processNextOp(ctx)).toBe('retry')
+    // list(1) + insert(50) were charged before the insert threw.
+    expect(quotaUsedToday(ctx.db)).toBe(51)
+  })
+
   it('bumps attempts on a transient failure and parks in failed after MAX_ATTEMPTS', async () => {
     const { ctx, yt } = setup({ SRC: ['v1'], DEST: [] })
     const id = seedMoveOp(ctx, { videoId: 'v1', target: 'DEST', remove: 'SRC' })

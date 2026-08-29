@@ -62,9 +62,11 @@ async function videoItemsIn(
  * Reconciles one op: ensure the video is in `target`, then ensure it is not in
  * `remove`. Insert-before-delete, and every step re-checks membership, so a
  * crash or retry can only duplicate a video, never drop it, and never
- * double-inserts. Each billed call is budget-checked first, so a video with
- * many duplicate entries can't push spend past `quotaLimit` — the op just
- * stops and stays `pending` for the next drain.
+ * double-inserts. Every billed call is charged to the day's quota *before* it
+ * is made and only when the budget covers it, so a video with many duplicate
+ * entries can't push spend past `quotaLimit`, and a crash mid-op can't cause an
+ * undercount that overshoots the budget on restart. The tradeoff — a call that
+ * fails after being billed by Google is still counted — is the safe direction.
  */
 async function reconcile(
   ctx: AppContext,
@@ -75,10 +77,8 @@ async function reconcile(
     if (quotaRemaining(ctx.db, ctx.config) < cost) {
       throw new QuotaExhaustedError()
     }
-    return run().then((v) => {
-      spendQuota(ctx.db, cost)
-      return v
-    })
+    spendQuota(ctx.db, cost)
+    return run()
   }
 
   const inTarget = await charge(1, () =>
