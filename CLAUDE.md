@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `youtube-swipe` is a Tinder-like swipe UI for triaging a YouTube playlist. See
 [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md) for the
-full spec, stack rationale, and milestones. Currently in M4: left-swipe moves videos in YouTube.
+full spec, stack rationale, and milestones. Currently in M5: UI polish — login/re-auth is done
+(auth-state gate, dead-grant detection, logout); playlist dropdowns and sort order remain.
 
 ## Structure
 
@@ -40,7 +41,11 @@ Fastify serves the built `web/dist` same-origin.
 - YouTube Data API quota is 10k units/day; reads are cheap, writes are 50 each. The playlist is
   synced into SQLite and cards are served from there — don't call the YouTube API per request.
 - Log in once by visiting `http://localhost:8080/api/auth/login` in a browser; the refresh token
-  persists in `api/data/app.sqlite`.
+  persists in `api/data/app.sqlite`. `POST /api/auth/logout` drops it.
+- Auth state is reactive, not just "is there a token row": a `invalid_grant`/401 from any YouTube
+  call flags the grant dead in `auth_status` (`api/src/auth/google.ts`), which makes `/api/health`
+  report `auth.state: needs_reauth`, `/api/videos` return 401, and the mover park (not fail queued
+  moves). A fresh login clears the flag and the sync cache. See `docs/implementation-plan.md` M5.
 - Decisions are recorded locally (`decisions` table, `POST /api/decisions` + `/undo`); `GET
   /api/videos` filters out decided videos. The frontend posts decisions fire-and-forget
   (`web/src/api/decisions.ts`).
@@ -51,7 +56,7 @@ Fastify serves the built `web/dist` same-origin.
   `youtube.readonly`) and `DOWNSTREAM_PLAYLIST_ID` set.
 - Quota: every billed YouTube call is counted in `quota_usage` (per US-Pacific day). The mover stops
   when `YOUTUBE_QUOTA_LIMIT` (default 9500, leaving read headroom under Google's 10k) is reached and
-  resumes the next day. `/api/health` exposes `writeEnabled`, `moveQueue`, and `quota`.
+  resumes the next day. `/api/health` exposes `auth`, `writeEnabled`, `moveQueue`, and `quota`.
 
 ## Solid-specific rule
 

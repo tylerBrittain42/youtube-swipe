@@ -1,6 +1,11 @@
+import type { youtube_v3 } from 'googleapis'
 import { describe, expect, it } from 'vitest'
 import { ensureSynced, getSyncState, syncPlaylist } from './sync.ts'
-import { NotAuthenticatedError } from '../auth/google.ts'
+import {
+  getAuthStatus,
+  markGrantInvalid,
+  NotAuthenticatedError,
+} from '../auth/google.ts'
 import {
   fakeYoutube,
   makeContext,
@@ -37,6 +42,45 @@ describe('syncPlaylist', () => {
     await expect(syncPlaylist(ctx, 'PL_TEST')).rejects.toBeInstanceOf(
       NotAuthenticatedError,
     )
+  })
+
+  it('flags the grant invalid and throws NotAuthenticatedError on a 401', async () => {
+    const yt = {
+      playlistItems: {
+        list: async () => {
+          throw Object.assign(new Error('invalid_grant'), { code: 401 })
+        },
+      },
+    } as unknown as youtube_v3.Youtube
+    const ctx = makeContext({ youtube: yt })
+
+    await expect(syncPlaylist(ctx, 'PL_TEST')).rejects.toBeInstanceOf(
+      NotAuthenticatedError,
+    )
+    expect(getAuthStatus(ctx.db)?.invalidSince).toBeTypeOf('number')
+  })
+
+  it('short-circuits without calling YouTube while the grant is flagged', async () => {
+    const { ctx, yt } = contextWith({
+      playlistItemsPages: [{ items: [] }],
+    })
+    markGrantInvalid(ctx.db, 'stale')
+
+    await expect(syncPlaylist(ctx, 'PL_TEST')).rejects.toBeInstanceOf(
+      NotAuthenticatedError,
+    )
+    expect(yt.calls.playlistItems).toBe(0)
+  })
+
+  it('marks the grant valid after a successful sync', async () => {
+    const { ctx } = contextWith({
+      playlistItemsPages: [
+        { items: [playlistItem({ videoId: 'a', position: 0 })] },
+      ],
+    })
+
+    await syncPlaylist(ctx, 'PL_TEST')
+    expect(getAuthStatus(ctx.db)?.invalidSince).toBeNull()
   })
 
   it('caches playlist items with durations and canonical URLs', async () => {

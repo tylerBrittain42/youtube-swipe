@@ -39,13 +39,28 @@ M4 needs the `youtube.force-ssl` scope (read **and** write). If you first
 authorized under M2's read-only scope, re-run `/api/auth/login` — `GET /api/health`
 shows `"writeEnabled": true` once the new grant is stored.
 
+`GET /api/health` reports an `auth` object the frontend uses to gate the UI:
+`{ state: "connected" | "needs_reauth" | "logged_out", reason?, tokenAgeDays }`.
+When a Google call comes back with `invalid_grant` or a 401 (revoked grant, or the
+7-day Testing-window expiry), the API flags the stored grant dead — `state`
+becomes `needs_reauth` / `grant_invalid`, `/api/videos` returns 401, and the move
+worker parks (it does **not** fail queued moves). Re-running `/api/auth/login`
+clears the flag and forces an immediate re-sync. `POST /api/auth/logout` drops the
+stored grant entirely.
+
+**Publish the consent screen to Production** (Google Cloud Console → OAuth consent
+screen) to remove the 7-day refresh-token expiry — single-user access to your own
+data needs no verification review. Then set `CONSENT_SCREEN_TESTING=false` to
+silence the frontend's "reconnect soon" nudge.
+
 ## Endpoints
 
 | Method | Path                  | Purpose                                                                                                |
 | ------ | --------------------- | ------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/health`         | Liveness, auth/`writeEnabled`, `decisionCount`, `moveQueue`, `quota`                                   |
+| GET    | `/api/health`         | Liveness, `auth` state / `writeEnabled`, `decisionCount`, `moveQueue`, `quota`                         |
 | GET    | `/api/auth/login`     | Redirect to Google consent                                                                             |
-| GET    | `/api/auth/callback`  | OAuth callback; stores the refresh token                                                               |
+| GET    | `/api/auth/callback`  | OAuth callback; stores the refresh token, clears the sync cache                                        |
+| POST   | `/api/auth/logout`    | Drops the stored grant (and revokes it at Google); 204                                                 |
 | GET    | `/api/videos?limit=`  | Next _n_ **undecided** playlist videos (1–50, def 10)                                                  |
 | GET    | `/api/playlists`      | Your playlists + IDs, for picking the source                                                           |
 | POST   | `/api/decisions`      | `{ videoId, action: "keep"\|"move"\|"watch" }` — records a decision; `move` also queues a YouTube move |

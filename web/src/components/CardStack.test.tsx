@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Video } from '../types'
+import { AuthRequiredError, type Video } from '../types'
 import CardStack from './CardStack'
 import { fetchVideos } from '../api/videos'
 import { postDecision, undoDecision } from '../api/decisions'
@@ -46,6 +46,8 @@ vi.mock('../api/health', () => ({
     status: 'ok',
     authenticated: true,
     writeEnabled: true,
+    auth: { state: 'connected', tokenAgeDays: 1 },
+    consentScreenTesting: true,
     downstreamPlaylistId: 'PL_X',
     moveQueue: { pending: 0, failed: 0 },
     quota: { usedToday: 0, limit: 9500 },
@@ -79,6 +81,16 @@ function remainingCount() {
 }
 
 describe('CardStack', () => {
+  it('calls onAuthLost instead of the error panel when videos 401', async () => {
+    vi.mocked(fetchVideos).mockRejectedValueOnce(new AuthRequiredError())
+    const onAuthLost = vi.fn()
+
+    render(() => <CardStack onAuthLost={onAuthLost} />)
+
+    await waitFor(() => expect(onAuthLost).toHaveBeenCalledTimes(1))
+    expect(screen.queryByText(/couldn.t load videos/i)).toBeNull()
+  })
+
   it('shows the top video once loaded', async () => {
     render(() => <CardStack />)
 

@@ -91,9 +91,10 @@ A refinement of the endpoints in the design doc. The main change: collapse `keep
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Liveness, and whether we're authenticated |
+| `GET` | `/api/health` | Liveness, and `auth` state (`connected` / `needs_reauth` / `logged_out`, + reason, token age) |
 | `GET` | `/api/auth/login` | Redirects to Google consent |
-| `GET` | `/api/auth/callback` | OAuth callback, stores refresh token |
+| `GET` | `/api/auth/callback` | OAuth callback, stores refresh token, clears the sync cache |
+| `POST` | `/api/auth/logout` | Drops (and revokes) the stored grant |
 | `GET` | `/api/videos?limit=10` | Next *n* undecided videos (id, title, thumbnail, channel, duration, url) |
 | `POST` | `/api/decisions` | `{ videoId, action: "keep" \| "move" \| "watch" }` |
 | `POST` | `/api/decisions/undo` | Reverses the last decision — you *will* misswipe |
@@ -138,7 +139,9 @@ Do this before writing code — it's the part most likely to have a surprise, an
    tokens after **7 days**, so your app will silently stop working every week. Two ways out: publish the app
    to *Production* (you'll click through an "unverified app" warning, but tokens stop expiring), or just
    re-run the login flow weekly. For a personal tool, publishing to Production is worth it. Full formal
-   verification is only needed if other people use it.
+   verification is only needed if other people use it. As of M5 the app degrades gracefully either way —
+   it shows a "Reconnect YouTube" screen when the grant dies and a "reconnect soon" nudge as the 7 days
+   run out (`CONSENT_SCREEN_TESTING`, default `true`; set `false` after publishing to Production).
 7. **Secrets hygiene**: `.env` for client ID/secret, `.env.example` checked in, `.env` and `*.sqlite` in
    `.gitignore` from the first commit.
 
@@ -212,9 +215,13 @@ The app works but is bare: an unauthenticated user just sees "Loading…", the p
 env vars, and the deck order is fixed. This milestone makes it usable by someone who isn't holding the
 README.
 
-- **Login / re-auth button.** When `/api/health` reports `authenticated: false` — or `writeEnabled:
-  false` with a downstream playlist configured — render a "Connect YouTube" button linking to
-  `/api/auth/login`, instead of the app hanging on the loading state. Closes the gap carried since M2.
+- **Login / re-auth button.** *(done)* `/api/health` now returns an `auth` state; the app renders a
+  "Connect YouTube" / "Reconnect YouTube" screen for `logged_out` and `needs_reauth`/`grant_invalid`
+  instead of hanging on the loading state. The API detects a dead grant (`invalid_grant` / 401) from
+  real calls, flags it so the move worker parks instead of failing queued moves, and clears the flag
+  (and the sync cache) on the next login. `POST /api/auth/logout` drops the grant. A `tokenAgeDays`
+  nudge covers the 7-day Testing-window expiry until the consent screen is published to Production
+  (`CONSENT_SCREEN_TESTING=false`). Closes the gap carried since M2.
 - **Playlist dropdowns.** Two `<select>`s populated from `GET /api/playlists`: one for the source
   playlist being triaged, one for the left-swipe ("move") destination. Selections persist server-side
   in a new `settings` table (`GET` / `PUT /api/settings`); `YOUTUBE_PLAYLIST_ID` /
@@ -269,7 +276,7 @@ columns) are known debts, not surprises.
 | --- | --- |
 | Watch Later inaccessible | Use a normal playlist (§0). Decided already. |
 | 10k/day quota | Local-first writes, queue + drain (§2). |
-| 7-day refresh token expiry | Publish consent screen to Production (§3.6). |
+| 7-day refresh token expiry | Publish consent screen to Production (§3.6); until then, M5's dead-grant detection + "reconnect" screen + age nudge keep the failure visible and one-click to fix. |
 | Swipe feel is fiddly on mobile | M1 exists specifically to de-risk this before any backend work. |
 | Mid-move crash loses a video | Insert-before-delete + idempotent queue (M4). |
 | Third-party cookie blocking kills the session on mobile | Serve the static bundle same-origin from Fastify (§3). |

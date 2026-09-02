@@ -12,6 +12,13 @@ export interface Config {
   downstreamPlaylistId: string | null
   /** Daily YouTube Data API budget the mover is allowed to spend (10k total; leave read headroom). */
   quotaLimit: number
+  /**
+   * Whether the OAuth consent screen is still in Google's "Testing" status,
+   * where refresh tokens expire after 7 days. Drives the frontend's
+   * "reconnect soon" nudge. Set to `false` once the screen is published to
+   * Production (expiry goes away).
+   */
+  consentScreenTesting: boolean
 }
 
 const DEFAULT_REDIRECT_URI = 'http://localhost:8080/api/auth/callback'
@@ -45,5 +52,6 @@ export function loadConfig(): Config {
     syncTtlMs: Number(process.env.SYNC_TTL_MS) || DEFAULT_SYNC_TTL_MS,
     downstreamPlaylistId: process.env.DOWNSTREAM_PLAYLIST_ID || null,
     quotaLimit: Number(process.env.YOUTUBE_QUOTA_LIMIT) || DEFAULT_QUOTA_LIMIT,
+    consentScreenTesting: process.env.CONSENT_SCREEN_TESTING !== 'false',
   }
 }

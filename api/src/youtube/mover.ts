@@ -1,12 +1,20 @@
 import type { youtube_v3 } from 'googleapis'
 import type { AppContext } from '../context.ts'
-import { getStoredToken, hasWriteScope } from '../auth/google.ts'
+import {
+  getAuthStatus,
+  getStoredToken,
+  hasWriteScope,
+  isAuthError,
+  markGrantInvalid,
+  markGrantValid,
+} from '../auth/google.ts'
 import {
   bumpAttempt,
   markOpDone,
   nextPendingOp,
   type MoveOp,
 } from '../move-queue.ts'
+import { errorMessage } from '../lib/errors.ts'
 import { quotaRemaining, spendQuota } from './quota.ts'
 
 export const MAX_ATTEMPTS = 5
@@ -20,16 +28,6 @@ class QuotaExhaustedError extends Error {
   constructor() {
     super('daily YouTube quota exhausted')
     this.name = 'QuotaExhaustedError'
-  }
-}
-
-function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  if (typeof err === 'string') return err
-  try {
-    return JSON.stringify(err)
-  } catch {
-    return String(err)
   }
 }
 
@@ -117,6 +115,9 @@ async function reconcile(
 /** Processes at most one queued op. No timers — safe to call from tests. */
 export async function processNextOp(ctx: AppContext): Promise<MoveOutcome> {
   if (!hasWriteScope(getStoredToken(ctx.db)?.scope)) return 'unauthed'
+  // Grant known-dead: don't spend quota on calls that will 401. Cleared by a
+  // fresh login (saveToken) or a successful token refresh.
+  if (getAuthStatus(ctx.db)?.invalidSince != null) return 'unauthed'
   if (quotaRemaining(ctx.db, ctx.config) < OP_COST_ESTIMATE) return 'quota'
 
   const op = nextPendingOp(ctx.db)
@@ -128,11 +129,18 @@ export async function processNextOp(ctx: AppContext): Promise<MoveOutcome> {
   try {
     await reconcile(ctx, yt, op)
     markOpDone(ctx.db, op.id)
+    markGrantValid(ctx.db)
     return 'done'
   } catch (err) {
     // Running out of budget isn't a failure — leave the op pending, don't burn
     // an attempt. Partial progress is safe because reconcile re-checks state.
     if (err instanceof QuotaExhaustedError) return 'quota'
+    // A dead grant is also not this op's fault — flag it and wait for re-login
+    // instead of marching every queued move to `failed`.
+    if (isAuthError(err)) {
+      markGrantInvalid(ctx.db, errorMessage(err))
+      return 'unauthed'
+    }
     bumpAttempt(ctx.db, op.id, errorMessage(err), MAX_ATTEMPTS)
     return 'retry'
   }

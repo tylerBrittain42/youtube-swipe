@@ -15,6 +15,7 @@ export function testConfig(overrides: Partial<Config> = {}): Config {
     syncTtlMs: 10 * 60 * 1000,
     downstreamPlaylistId: 'PL_DOWNSTREAM',
     quotaLimit: 10000,
+    consentScreenTesting: true,
     ...overrides,
   }
 }

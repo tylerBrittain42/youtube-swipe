@@ -10,6 +10,8 @@ const base: Health = {
   status: 'ok',
   authenticated: true,
   writeEnabled: true,
+  auth: { state: 'connected', tokenAgeDays: 1 },
+  consentScreenTesting: true,
   downstreamPlaylistId: 'PL_REJECT',
   moveQueue: { pending: 0, failed: 0 },
   quota: { usedToday: 0, limit: 9500 },
@@ -67,7 +69,14 @@ describe('SyncStatus', () => {
   })
 
   it('prompts re-authorization when the write scope is missing', async () => {
-    mockHealth({ writeEnabled: false })
+    mockHealth({
+      writeEnabled: false,
+      auth: {
+        state: 'needs_reauth',
+        reason: 'missing_write_scope',
+        tokenAgeDays: 1,
+      },
+    })
     render(() => <SyncStatus />)
     const link = await screen.findByRole('link', {
       name: /re-authorize to enable moves/i,
@@ -75,8 +84,27 @@ describe('SyncStatus', () => {
     expect(link).toHaveAttribute('href', '/api/auth/login')
   })
 
-  it('does not prompt re-auth when no downstream playlist is configured', async () => {
-    mockHealth({ writeEnabled: false, downstreamPlaylistId: null })
+  it('does not prompt re-auth when the grant is connected', async () => {
+    mockHealth({})
+    render(() => <SyncStatus />)
+    await waitFor(() => expect(fetchHealth).toHaveBeenCalled())
+    expect(screen.queryByTestId('sync-status')).toBeNull()
+  })
+
+  it('nudges to reconnect as the Testing-window expiry approaches', async () => {
+    mockHealth({ auth: { state: 'connected', tokenAgeDays: 6 } })
+    render(() => <SyncStatus />)
+    const link = await screen.findByRole('link', {
+      name: /access expires soon/i,
+    })
+    expect(link).toHaveAttribute('href', '/api/auth/login')
+  })
+
+  it('does not nudge once the consent screen is out of Testing', async () => {
+    mockHealth({
+      consentScreenTesting: false,
+      auth: { state: 'connected', tokenAgeDays: 30 },
+    })
     render(() => <SyncStatus />)
     await waitFor(() => expect(fetchHealth).toHaveBeenCalled())
     expect(screen.queryByTestId('sync-status')).toBeNull()
