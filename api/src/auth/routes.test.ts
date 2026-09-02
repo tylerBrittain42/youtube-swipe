@@ -134,6 +134,30 @@ describe('OAuth routes', () => {
     )
   })
 
+  it('rejects a callback whose state is past the TTL', async () => {
+    const ctx = authContext()
+    const app = await buildApp(ctx, { logger: false })
+
+    const login = await app.inject({ method: 'GET', url: '/api/auth/login' })
+    const state = new URL(login.headers.location as string).searchParams.get(
+      'state',
+    )
+    // Age the pending row past the 10-minute window.
+    ctx.db
+      .prepare('UPDATE oauth_pending_state SET created_at = ? WHERE state = ?')
+      .run(Date.now() - 20 * 60 * 1000, state)
+
+    const cb = await app.inject({
+      method: 'GET',
+      url: `/api/auth/callback?code=c&state=${state}`,
+    })
+    expect(cb.statusCode).toBe(400)
+    // ...and the stale row is swept.
+    expect(
+      ctx.db.prepare('SELECT 1 FROM oauth_pending_state').get(),
+    ).toBeUndefined()
+  })
+
   it('does not reuse a consumed state', async () => {
     const ctx = authContext()
     ctx.oauthClient.getToken = (async () => ({

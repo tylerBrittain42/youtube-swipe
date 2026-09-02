@@ -18,11 +18,19 @@ function issueState(db: DB): string {
   return state
 }
 
-/** Consumes a pending state, returning whether it was valid (single-use). */
+/**
+ * Consumes a pending state, returning whether it was valid: it must exist and be
+ * within the TTL (enforced here, not just opportunistically pruned on the next
+ * login). Single-use — the row is deleted either way. Also sweeps expired rows.
+ */
 function consumeState(db: DB, state: string): boolean {
+  const cutoff = Date.now() - STATE_TTL_MS
   const info = db
-    .prepare('DELETE FROM oauth_pending_state WHERE state = ?')
-    .run(state)
+    .prepare(
+      'DELETE FROM oauth_pending_state WHERE state = ? AND created_at >= ?',
+    )
+    .run(state, cutoff)
+  db.prepare('DELETE FROM oauth_pending_state WHERE created_at < ?').run(cutoff)
   return info.changes > 0
 }
 

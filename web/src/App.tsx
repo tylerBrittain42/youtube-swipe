@@ -21,7 +21,11 @@ function App() {
     return 'app'
   }
 
-  const showLogout = () => health.latest?.auth?.state !== 'logged_out'
+  // Only once we actually know the auth state, and not on the connect screen.
+  const showLogout = () => {
+    const state = health.latest?.auth?.state
+    return state != null && state !== 'logged_out'
+  }
 
   async function handleLogout() {
     try {
