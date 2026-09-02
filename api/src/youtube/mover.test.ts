@@ -1,6 +1,8 @@
+import type { youtube_v3 } from 'googleapis'
 import { describe, expect, it } from 'vitest'
 import { processNextOp, MAX_ATTEMPTS } from './mover.ts'
 import { moveQueueStatus, nextPendingOp } from '../move-queue.ts'
+import { getAuthStatus, markGrantValid } from '../auth/google.ts'
 import { quotaUsedToday } from './quota.ts'
 import {
   fakeYoutubePlaylists,
@@ -8,6 +10,16 @@ import {
   seedMoveOp,
   seedToken,
 } from '../test/helpers.ts'
+
+/** A YouTube client that 401s on the first call — a dead grant. */
+function youtube401(): youtube_v3.Youtube {
+  const boom = async () => {
+    throw Object.assign(new Error('invalid_grant'), { code: 401 })
+  }
+  return {
+    playlistItems: { list: boom, insert: boom, delete: boom },
+  } as unknown as youtube_v3.Youtube
+}
 
 function setup(playlists: Record<string, string[]>, configOverrides = {}) {
   const yt = fakeYoutubePlaylists(playlists)
@@ -128,6 +140,37 @@ describe('processNextOp', () => {
     yt.failNext('insert')
     expect(await processNextOp(ctx)).toBe('retry')
     expect(moveQueueStatus(ctx.db)).toEqual({ pending: 0, failed: 1 })
+  })
+
+  it('flags the grant and returns unauthed on a 401, without burning an attempt', async () => {
+    const ctx = makeContext({ youtube: youtube401() })
+    seedToken(ctx)
+    const id = seedMoveOp(ctx, { videoId: 'v1', target: 'DEST', remove: 'SRC' })
+
+    expect(await processNextOp(ctx)).toBe('unauthed')
+
+    expect(getAuthStatus(ctx.db)?.invalidSince).toBeTypeOf('number')
+    const row = ctx.db
+      .prepare('SELECT attempts, state FROM move_queue WHERE id = ?')
+      .get(id) as { attempts: number; state: string }
+    expect(row).toEqual({ attempts: 0, state: 'pending' })
+  })
+
+  it('short-circuits to unauthed while the grant is flagged, then resumes after a valid call', async () => {
+    const yt = fakeYoutubePlaylists({ SRC: ['v1'], DEST: [] })
+    const ctx = makeContext({ youtube: yt.client })
+    seedToken(ctx)
+    seedMoveOp(ctx, { videoId: 'v1', target: 'DEST', remove: 'SRC' })
+
+    ctx.db
+      .prepare('INSERT INTO auth_status (id, invalid_since) VALUES (1, ?)')
+      .run(Date.now())
+    expect(await processNextOp(ctx)).toBe('unauthed')
+    expect(yt.calls.list).toBe(0) // no wasted quota
+
+    markGrantValid(ctx.db)
+    expect(await processNextOp(ctx)).toBe('done')
+    expect(getAuthStatus(ctx.db)?.invalidSince).toBeNull()
   })
 
   it('treats a 404 on delete as success', async () => {

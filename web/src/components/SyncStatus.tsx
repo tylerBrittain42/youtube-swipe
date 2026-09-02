@@ -3,6 +3,8 @@ import { fetchHealth } from '../api/health'
 import type { Health } from '../types'
 
 const POLL_MS = 15_000
+/** Warn to reconnect this many days before Google's 7-day Testing-window expiry. */
+const NUDGE_AFTER_DAYS = 6
 
 function plural(n: number) {
   return n === 1 ? '' : 's'
@@ -10,8 +12,9 @@ function plural(n: number) {
 
 /**
  * A one-line status under the deck: how many queued moves are still syncing to
- * YouTube, whether the daily quota is spent, or whether the write scope is
- * missing. Renders nothing when there's nothing to say.
+ * YouTube, whether the daily quota is spent, whether the write scope is missing,
+ * or whether the grant is about to expire. Renders nothing when there's nothing
+ * to say. (A fully dead grant is handled one level up, by the app's auth gate.)
  */
 export default function SyncStatus() {
   const [health, setHealth] = createSignal<Health | null>(null)
@@ -30,14 +33,13 @@ export default function SyncStatus() {
     onCleanup(() => clearInterval(timer))
   })
 
-  const needsReauth = () => {
+  const needsWriteScope = () => health()?.auth?.reason === 'missing_write_scope'
+
+  const expiringSoon = () => {
     const h = health()
-    return (
-      h != null &&
-      h.authenticated &&
-      !h.writeEnabled &&
-      h.downstreamPlaylistId != null
-    )
+    if (!h?.consentScreenTesting) return false
+    const age = h.auth?.tokenAgeDays
+    return age != null && age >= NUDGE_AFTER_DAYS
   }
 
   const message = (): string | null => {
@@ -53,9 +55,18 @@ export default function SyncStatus() {
   }
 
   return (
-    <Show when={needsReauth() || message()}>
+    <Show when={needsWriteScope() || expiringSoon() || message()}>
       <p class="text-sm text-neutral-500" data-testid="sync-status">
-        <Show when={needsReauth()} fallback={message()}>
+        <Show
+          when={needsWriteScope()}
+          fallback={
+            <Show when={expiringSoon()} fallback={message()}>
+              <a class="underline" href="/api/auth/login">
+                YouTube access expires soon — reconnect
+              </a>
+            </Show>
+          }
+        >
           <a class="underline" href="/api/auth/login">
             Re-authorize to enable moves
           </a>

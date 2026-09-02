@@ -15,6 +15,23 @@ CREATE TABLE IF NOT EXISTS oauth_token (
   updated_at    INTEGER NOT NULL
 );
 
+-- Whether the stored grant is believed to still work. Separate from oauth_token
+-- because oauth_token.updated_at moves on every silent access-token refresh,
+-- whereas connected_at only tracks a real consent (a new refresh_token).
+CREATE TABLE IF NOT EXISTS auth_status (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  connected_at  INTEGER,
+  invalid_since INTEGER,
+  last_error    TEXT
+);
+
+-- Outstanding OAuth state values, consumed on callback for CSRF protection.
+-- A table (not an in-memory Set) so a login survives an api restart.
+CREATE TABLE IF NOT EXISTS oauth_pending_state (
+  state      TEXT PRIMARY KEY,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS videos (
   id               TEXT PRIMARY KEY,
   playlist_id      TEXT NOT NULL,

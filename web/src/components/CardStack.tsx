@@ -10,6 +10,7 @@ import {
 import { fetchVideos } from '../api/videos'
 import { postDecision, undoDecision } from '../api/decisions'
 import {
+  AuthRequiredError,
   directionToDecision,
   type Decision,
   type SwipeDirection,
@@ -29,7 +30,7 @@ interface HistoryEntry {
   decision: Decision
 }
 
-export default function CardStack() {
+export default function CardStack(props: { onAuthLost?: () => void }) {
   const [queue, setQueue] = createSignal<Video[]>([])
   const [loading, setLoading] = createSignal(true)
   const [history, setHistory] = createSignal<HistoryEntry[]>([])
@@ -53,6 +54,10 @@ export default function CardStack() {
       if (videos.length < FETCH_BATCH) setExhausted(true)
       setQueue(videos)
     } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        props.onAuthLost?.()
+        return
+      }
       console.error(err)
       setError(true)
     } finally {
@@ -75,6 +80,10 @@ export default function CardStack() {
         ]
       })
     } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        props.onAuthLost?.()
+        return
+      }
       console.error(err)
     } finally {
       setFetching(false)

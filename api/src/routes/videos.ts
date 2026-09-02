@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import type { AppContext } from '../context.ts'
-import { NotAuthenticatedError } from '../auth/google.ts'
+import { getAuthStatus, NotAuthenticatedError } from '../auth/google.ts'
 import { ensureSynced } from '../youtube/sync.ts'
 
 const NOT_AUTHENTICATED = {
@@ -32,7 +32,7 @@ export function registerVideosRoute(
     async (req, reply) => {
       const limit = parseLimit(req.query.limit)
 
-      if (!ctx.getYoutube()) {
+      if (!ctx.getYoutube() || getAuthStatus(ctx.db)?.invalidSince != null) {
         return reply.code(401).send(NOT_AUTHENTICATED)
       }
 

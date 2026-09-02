@@ -1,13 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../server.ts'
-import { makeContext } from '../test/helpers.ts'
+import { makeContext, markSynced, seedToken } from '../test/helpers.ts'
 import { createOAuthClient, getStoredToken } from './google.ts'
+import type { AppContext } from '../context.ts'
 
 function authContext() {
   const ctx = makeContext()
   ctx.oauthClient = createOAuthClient(ctx.config)
   return ctx
 }
+
+/** A second context sharing the first's DB — simulates an api restart. */
+function restarted(ctx: AppContext): AppContext {
+  return { ...ctx, oauthClient: createOAuthClient(ctx.config) }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('OAuth routes', () => {
   it('redirects to Google consent with a state param', async () => {
@@ -51,6 +61,77 @@ describe('OAuth routes', () => {
     expect(cb.statusCode).toBe(302)
     expect(cb.headers.location).toBe('/')
     expect(getStoredToken(ctx.db)?.refresh_token).toBe('rt-1')
+  })
+
+  it('accepts a callback whose state was issued before an api restart', async () => {
+    const ctx = authContext()
+    const app1 = await buildApp(ctx, { logger: false })
+    const login = await app1.inject({ method: 'GET', url: '/api/auth/login' })
+    const state = new URL(login.headers.location as string).searchParams.get(
+      'state',
+    )
+
+    const ctx2 = restarted(ctx)
+    ctx2.oauthClient.getToken = (async () => ({
+      tokens: { refresh_token: 'rt-restart' },
+    })) as unknown as typeof ctx2.oauthClient.getToken
+    const app2 = await buildApp(ctx2, { logger: false })
+
+    const cb = await app2.inject({
+      method: 'GET',
+      url: `/api/auth/callback?code=c&state=${state}`,
+    })
+    expect(cb.statusCode).toBe(302)
+    expect(getStoredToken(ctx.db)?.refresh_token).toBe('rt-restart')
+  })
+
+  it('clears the playlist sync cache on a successful callback', async () => {
+    const ctx = authContext()
+    ctx.oauthClient.getToken = (async () => ({
+      tokens: { refresh_token: 'rt' },
+    })) as unknown as typeof ctx.oauthClient.getToken
+    markSynced(ctx)
+    const app = await buildApp(ctx, { logger: false })
+
+    const login = await app.inject({ method: 'GET', url: '/api/auth/login' })
+    const state = new URL(login.headers.location as string).searchParams.get(
+      'state',
+    )
+    await app.inject({
+      method: 'GET',
+      url: `/api/auth/callback?code=c&state=${state}`,
+    })
+
+    const row = ctx.db
+      .prepare('SELECT * FROM sync_state WHERE playlist_id = ?')
+      .get(ctx.config.playlistId)
+    expect(row).toBeUndefined()
+  })
+
+  it('logout deletes the token, auth status, and sync cache', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(null, { status: 200 })),
+    )
+    const ctx = authContext()
+    seedToken(ctx)
+    ctx.db
+      .prepare('INSERT INTO auth_status (id, connected_at) VALUES (1, ?)')
+      .run(Date.now())
+    markSynced(ctx)
+    const app = await buildApp(ctx, { logger: false })
+
+    const res = await app.inject({ method: 'POST', url: '/api/auth/logout' })
+
+    expect(res.statusCode).toBe(204)
+    expect(getStoredToken(ctx.db)).toBeUndefined()
+    expect(
+      ctx.db.prepare('SELECT * FROM auth_status WHERE id = 1').get(),
+    ).toBeUndefined()
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining('oauth2.googleapis.com/revoke'),
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
   it('does not reuse a consumed state', async () => {

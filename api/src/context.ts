@@ -4,6 +4,7 @@ import { openDb, type DB } from './db.ts'
 import {
   createOAuthClient,
   getAuthorizedClient,
+  markGrantValid,
   saveToken,
   type OAuth2Client,
 } from './auth/google.ts'
@@ -23,8 +24,17 @@ export interface AppContext {
 export function createContext(config: Config): AppContext {
   const db = openDb(config.databasePath)
   const oauthClient = createOAuthClient(config)
-  // Persist access tokens that googleapis refreshes behind our back.
-  oauthClient.on('tokens', (tokens) => saveToken(db, tokens))
+  // Persist access tokens that googleapis refreshes behind our back. A refresh
+  // succeeding also proves the grant is alive, so clear any stale "dead grant"
+  // flag. Guarded: this runs inside an EventEmitter, where a throw is uncaught.
+  oauthClient.on('tokens', (tokens) => {
+    try {
+      saveToken(db, tokens)
+      markGrantValid(db)
+    } catch (err) {
+      console.error('failed to persist refreshed token', err)
+    }
+  })
 
   return {
     db,

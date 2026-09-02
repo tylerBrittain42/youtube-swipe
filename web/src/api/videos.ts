@@ -1,4 +1,4 @@
-import type { Video } from '../types'
+import { AuthRequiredError, type Video } from '../types'
 
 /**
  * `GET /api/videos?limit=n` (see docs/implementation-plan.md §2). Served by the
@@ -6,6 +6,9 @@ import type { Video } from '../types'
  */
 export async function fetchVideos(limit = 10): Promise<Video[]> {
   const res = await fetch(`/api/videos?limit=${limit}`)
+  if (res.status === 401) {
+    throw new AuthRequiredError()
+  }
   if (!res.ok) {
     throw new Error(`GET /api/videos failed: ${res.status}`)
   }

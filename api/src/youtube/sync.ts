@@ -1,7 +1,14 @@
 import type { youtube_v3 } from 'googleapis'
 import type { AppContext } from '../context.ts'
-import { NotAuthenticatedError } from '../auth/google.ts'
+import {
+  getAuthStatus,
+  isAuthError,
+  markGrantInvalid,
+  markGrantValid,
+  NotAuthenticatedError,
+} from '../auth/google.ts'
 import { formatDuration } from '../lib/duration.ts'
+import { errorMessage } from '../lib/errors.ts'
 import { spendQuota } from './quota.ts'
 
 /** Records one billed API call. */
@@ -104,14 +111,28 @@ export async function syncPlaylist(
 ): Promise<void> {
   const yt = ctx.getYoutube()
   if (!yt) throw new NotAuthenticatedError()
+  if (getAuthStatus(ctx.db)?.invalidSince != null) {
+    throw new NotAuthenticatedError()
+  }
 
   const spend: Spend = () => spendQuota(ctx.db, 1)
-  const staged = await listPlaylistItems(yt, playlistId, spend)
-  const durations = await fetchDurations(
-    yt,
-    staged.map((s) => s.videoId),
-    spend,
-  )
+  let staged: StagedItem[]
+  let durations: Map<string, string>
+  try {
+    staged = await listPlaylistItems(yt, playlistId, spend)
+    durations = await fetchDurations(
+      yt,
+      staged.map((s) => s.videoId),
+      spend,
+    )
+  } catch (err) {
+    if (isAuthError(err)) {
+      markGrantInvalid(ctx.db, errorMessage(err))
+      throw new NotAuthenticatedError()
+    }
+    throw err
+  }
+  markGrantValid(ctx.db)
   const now = Date.now()
 
   const upsert = ctx.db.prepare(
