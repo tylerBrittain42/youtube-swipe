@@ -85,9 +85,7 @@ export function registerAuthRoutes(
 
       // Force the next /api/videos to re-sync instead of serving a cache from
       // before the (re-)auth — otherwise a reconnect looks stale for ~10 min.
-      ctx.db
-        .prepare('DELETE FROM sync_state WHERE playlist_id = ?')
-        .run(ctx.config.playlistId)
+      ctx.db.prepare('DELETE FROM sync_state').run()
 
       return reply.redirect('/')
     },
@@ -97,9 +95,7 @@ export function registerAuthRoutes(
     const token = getStoredToken(ctx.db)
     ctx.db.prepare('DELETE FROM oauth_token WHERE id = 1').run()
     ctx.db.prepare('DELETE FROM auth_status WHERE id = 1').run()
-    ctx.db
-      .prepare('DELETE FROM sync_state WHERE playlist_id = ?')
-      .run(ctx.config.playlistId)
+    ctx.db.prepare('DELETE FROM sync_state').run()
     if (token?.refresh_token) await revokeToken(token.refresh_token)
     return reply.code(204).send()
   })

@@ -163,6 +163,34 @@ export function seedToken(
     .run(scope, Date.now())
 }
 
+export function seedSettings(
+  ctx: AppContext,
+  row: {
+    sourcePlaylistId?: string
+    downstreamPlaylistId?: string | null
+    sortOrder?: 'oldest' | 'newest'
+  } = {},
+): void {
+  ctx.db
+    .prepare(
+      `INSERT INTO settings (id, source_playlist_id, downstream_playlist_id, sort_order, updated_at)
+       VALUES (1, @source, @downstream, @sortOrder, @now)
+       ON CONFLICT (id) DO UPDATE SET
+         source_playlist_id = excluded.source_playlist_id,
+         downstream_playlist_id = excluded.downstream_playlist_id,
+         sort_order = excluded.sort_order`,
+    )
+    .run({
+      source: row.sourcePlaylistId ?? ctx.config.playlistId,
+      downstream:
+        row.downstreamPlaylistId === undefined
+          ? ctx.config.downstreamPlaylistId
+          : row.downstreamPlaylistId,
+      sortOrder: row.sortOrder ?? 'oldest',
+      now: Date.now(),
+    })
+}
+
 export function seedMoveOp(
   ctx: AppContext,
   row: {

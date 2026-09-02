@@ -1,7 +1,9 @@
 import { Match, Show, Switch, createResource } from 'solid-js'
 import CardStack from './components/CardStack'
 import ConnectScreen from './components/ConnectScreen'
+import SettingsBar from './components/SettingsBar'
 import { fetchHealth } from './api/health'
+import { fetchSettings } from './api/settings'
 import { logout } from './api/auth'
 
 function App() {
@@ -19,6 +21,23 @@ function App() {
       return 'reconnect'
     }
     return 'app'
+  }
+
+  // Only fetched once we're past the auth gate.
+  const [settings, { refetch: refetchSettings }] = createResource(
+    () => gate() === 'app' || undefined,
+    fetchSettings,
+  )
+
+  // Changing the source playlist or sort order must fully reset the deck, so
+  // remount CardStack (keyed) when either changes; changing only the move
+  // destination leaves it alone. Undefined until settings resolve so the deck
+  // mounts once with the real key (not once bare, then again) — unless settings
+  // themselves failed, in which case mount anyway and let CardStack cope.
+  const deckKey = () => {
+    const s = settings.latest
+    if (s) return `${s.sourcePlaylistId}|${s.sortOrder}`
+    return settings.error ? 'no-settings' : undefined
   }
 
   // Only once we actually know the auth state, and not on the connect screen.
@@ -64,7 +83,19 @@ function App() {
           <ConnectScreen mode="reconnect" />
         </Match>
         <Match when={gate() === 'app'}>
-          <CardStack onAuthLost={() => void refetch()} />
+          <div class="flex w-full flex-col items-center gap-6">
+            <Show when={settings.latest}>
+              {(s) => (
+                <SettingsBar
+                  settings={s()}
+                  onSaved={() => void refetchSettings()}
+                />
+              )}
+            </Show>
+            <Show when={deckKey()} keyed>
+              <CardStack onAuthLost={() => void refetch()} />
+            </Show>
+          </div>
         </Match>
       </Switch>
     </div>

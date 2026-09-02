@@ -1,5 +1,4 @@
 import type { DB } from './db.ts'
-import type { Config } from './config.ts'
 
 export type MoveOpKind = 'move' | 'revert'
 export type MoveOpState = 'pending' | 'done' | 'failed' | 'superseded'
@@ -60,16 +59,16 @@ function insertOp(
 }
 
 /**
- * Queues moving a video from its source playlist into the configured downstream
- * playlist. Returns null (nothing queued) if there is no downstream playlist or
- * the video isn't in the local cache.
+ * Queues moving a video from its source playlist into the downstream playlist.
+ * Returns null (nothing queued) if there is no downstream playlist or the video
+ * isn't in the local cache.
  */
 export function enqueueMove(
   db: DB,
-  config: Config,
+  downstreamPlaylistId: string | null,
   videoId: string,
 ): number | null {
-  if (!config.downstreamPlaylistId) return null
+  if (!downstreamPlaylistId) return null
 
   const video = db
     .prepare('SELECT playlist_id FROM videos WHERE id = ?')
@@ -78,7 +77,7 @@ export function enqueueMove(
 
   return insertOp(db, {
     videoId,
-    target: config.downstreamPlaylistId,
+    target: downstreamPlaylistId,
     remove: video.playlist_id,
     kind: 'move',
   })

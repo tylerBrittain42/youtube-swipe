@@ -10,6 +10,22 @@ export interface Video {
 
 export type Decision = 'keep' | 'move' | 'watch'
 
+export type SortOrder = 'oldest' | 'newest'
+
+/** `GET`/`PUT /api/settings` — user-editable config, persisted server-side. */
+export interface Settings {
+  sourcePlaylistId: string
+  downstreamPlaylistId: string | null
+  sortOrder: SortOrder
+}
+
+/** One row from `GET /api/playlists`. */
+export interface Playlist {
+  id: string
+  title: string
+  itemCount: number
+}
+
 export type AuthState = 'connected' | 'needs_reauth' | 'logged_out'
 
 export interface AuthInfo {

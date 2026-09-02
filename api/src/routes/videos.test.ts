@@ -5,6 +5,7 @@ import {
   makeContext,
   markSynced,
   seedDecision,
+  seedSettings,
   seedVideo,
 } from '../test/helpers.ts'
 
@@ -79,6 +80,33 @@ describe('GET /api/videos', () => {
 
     const low = await app.inject({ method: 'GET', url: '/api/videos?limit=0' })
     expect(low.json()).toHaveLength(1)
+  })
+
+  it('orders newest-first (position descending) when settings say so', async () => {
+    const { ctx, app } = await appWithYoutube(true)
+    seedSettings(ctx, { sortOrder: 'newest' })
+    markSynced(ctx)
+    seedVideo(ctx, { id: 'a', position: 0 })
+    seedVideo(ctx, { id: 'b', position: 1 })
+    seedVideo(ctx, { id: 'c', position: 2 })
+
+    const res = await app.inject({ method: 'GET', url: '/api/videos' })
+    expect(res.json().map((v: { id: string }) => v.id)).toEqual(['c', 'b', 'a'])
+  })
+
+  it('reads the source playlist from settings, not config', async () => {
+    const { ctx, app } = await appWithYoutube(true)
+    seedSettings(ctx, { sourcePlaylistId: 'PL_PICKED' })
+    markSynced(ctx, 'PL_PICKED')
+    seedVideo(ctx, { id: 'x', position: 0, playlistId: 'PL_PICKED' })
+    seedVideo(ctx, {
+      id: 'stale',
+      position: 0,
+      playlistId: ctx.config.playlistId,
+    })
+
+    const res = await app.inject({ method: 'GET', url: '/api/videos' })
+    expect(res.json().map((v: { id: string }) => v.id)).toEqual(['x'])
   })
 
   it('502s when the YouTube sync fails', async () => {

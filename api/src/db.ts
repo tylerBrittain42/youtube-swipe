@@ -83,6 +83,16 @@ CREATE TABLE IF NOT EXISTS quota_usage (
   day   TEXT PRIMARY KEY,
   units INTEGER NOT NULL
 );
+
+-- User-editable config. Seeded once from env on first read, authoritative after.
+CREATE TABLE IF NOT EXISTS settings (
+  id                     INTEGER PRIMARY KEY CHECK (id = 1),
+  source_playlist_id     TEXT,
+  downstream_playlist_id TEXT,
+  sort_order             TEXT NOT NULL DEFAULT 'oldest'
+                           CHECK (sort_order IN ('oldest', 'newest')),
+  updated_at             INTEGER NOT NULL
+);
 `
 
 /**
