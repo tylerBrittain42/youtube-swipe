@@ -95,10 +95,11 @@ A refinement of the endpoints in the design doc. The main change: collapse `keep
 | `GET` | `/api/auth/login` | Redirects to Google consent |
 | `GET` | `/api/auth/callback` | OAuth callback, stores refresh token, clears the sync cache |
 | `POST` | `/api/auth/logout` | Drops (and revokes) the stored grant |
-| `GET` | `/api/videos?limit=10` | Next *n* undecided videos (id, title, thumbnail, channel, duration, url) |
+| `GET` | `/api/videos?limit=10` | Next *n* undecided videos (id, title, thumbnail, channel, duration, url); source playlist + order come from settings |
 | `POST` | `/api/decisions` | `{ videoId, action: "keep" \| "move" \| "watch" }` |
 | `POST` | `/api/decisions/undo` | Reverses the last decision — you *will* misswipe |
 | `GET` | `/api/playlists` | So the UI can pick source + downstream playlists |
+| `GET` `PUT` | `/api/settings` | `{ sourcePlaylistId, downstreamPlaylistId, sortOrder }` — env-seeded, then UI-owned |
 
 `GET /api/videos` should return everything needed to render a card, so the frontend never makes a second
 call per card.
@@ -222,22 +223,21 @@ README.
   (and the sync cache) on the next login. `POST /api/auth/logout` drops the grant. A `tokenAgeDays`
   nudge covers the 7-day Testing-window expiry until the consent screen is published to Production
   (`CONSENT_SCREEN_TESTING=false`). Closes the gap carried since M2.
-- **Playlist dropdowns.** Two `<select>`s populated from `GET /api/playlists`: one for the source
-  playlist being triaged, one for the left-swipe ("move") destination. Selections persist server-side
-  in a new `settings` table (`GET` / `PUT /api/settings`); `YOUTUBE_PLAYLIST_ID` /
-  `DOWNSTREAM_PLAYLIST_ID` become the *initial seed*, after which the UI is the source of truth.
-  Changing the source triggers a re-sync; in-flight `move_queue` rows keep their snapshotted playlist
-  IDs and are unaffected.
-  - *Open question:* the design doc has right-swipe = "keep" (no move). If right-swipe should also
-    sort into a chosen playlist, that adds a second destination dropdown and changes
-    `directionToDecision` plus the move queue. Decide before building.
-- **Sort order.** `GET /api/videos` gains `?order=oldest|newest` — playlist position ascending vs.
-  descending ("first added" vs. "last added"). A toggle in the UI; the choice is persisted.
-- **Visual pass.** Spacing, header, card and button styling, transitions, mobile layout. No behavior
-  change — just make it look finished.
+- **Playlist dropdowns.** *(done)* Two `<select>`s populated from `GET /api/playlists`: source +
+  left-swipe destination (with a "— none —" option). Choices persist in the `settings` table
+  (`GET` / `PUT /api/settings`); `YOUTUBE_PLAYLIST_ID` / `DOWNSTREAM_PLAYLIST_ID` seed the row on
+  first read, then the row is authoritative. Auto-saves on change. Changing the source drops that
+  playlist's `sync_state` so the next `/api/videos` re-syncs; in-flight `move_queue` rows keep their
+  snapshotted playlist IDs. Right-swipe stays "keep" (no destination) — the "sort into a playlist"
+  option was declined to keep scope down.
+- **Sort order.** *(done)* Persisted in `settings` as `sortOrder: 'oldest' | 'newest'` (playlist
+  position ascending / descending); `/api/videos` applies it. A segmented toggle in the settings bar.
+  The `?order=` query param the earlier draft mentioned was dropped — settings is the single source
+  of truth.
+- **Visual pass.** Minimal pass done alongside the controls (settings bar styling, spacing). A fuller
+  restyle of cards/buttons/transitions is deferred to its own task.
 - **Done when:** a fresh browser with no prior login can connect, pick both playlists, choose a sort
-  order, and triage — without touching `.env` or a terminal.
-  consider an advanced option panel that different apis can send
+  order, and triage — without touching `.env` or a terminal. ✓
 
 ### M6 — Polish & ship
 - Session summary ("42 kept, 17 moved") from the `decisions` table.
