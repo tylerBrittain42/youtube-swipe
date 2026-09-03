@@ -10,3 +10,4 @@ surface (sessions, per-user tokens, data isolation, shared quota).
 ## offshoots
 - movies
 - multiplayer(movies/activities)
+- chatroom

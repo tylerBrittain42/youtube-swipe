@@ -9,6 +9,7 @@ import { registerHealthRoute } from './routes/health.ts'
 import { registerVideosRoute } from './routes/videos.ts'
 import { registerPlaylistsRoute } from './routes/playlists.ts'
 import { registerDecisionsRoute } from './routes/decisions.ts'
+import { registerSettingsRoute } from './routes/settings.ts'
 
 export interface BuildAppOptions {
   logger?: boolean
@@ -31,6 +32,7 @@ export async function buildApp(
   registerVideosRoute(app, ctx)
   registerPlaylistsRoute(app, ctx)
   registerDecisionsRoute(app, ctx)
+  registerSettingsRoute(app, ctx)
 
   const webDist = resolveWebDist()
   const hasFrontend = existsSync(join(webDist, 'index.html'))

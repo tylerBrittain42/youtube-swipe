@@ -12,9 +12,10 @@ contract and §3 for infra notes.
    **OAuth client ID → Web application** with redirect URI
    `http://localhost:8080/api/auth/callback`.
 2. `cp .env.example .env` and fill in `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
-   `YOUTUBE_PLAYLIST_ID`, and (for M4 moves) `DOWNSTREAM_PLAYLIST_ID`. Run
-   `GET /api/playlists` once authed to find IDs, or copy the `list=` param from a
-   playlist's YouTube URL.
+   and `YOUTUBE_PLAYLIST_ID` (plus `DOWNSTREAM_PLAYLIST_ID` for M4 moves). Those
+   two playlist vars only seed the `settings` row on first run — after that the
+   in-app pickers own them. Run `GET /api/playlists` once authed to find IDs, or
+   copy the `list=` param from a playlist's YouTube URL.
 
 ## Commands
 
@@ -55,16 +56,27 @@ silence the frontend's "reconnect soon" nudge.
 
 ## Endpoints
 
-| Method | Path                  | Purpose                                                                                                |
-| ------ | --------------------- | ------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/health`         | Liveness, `auth` state / `writeEnabled`, `decisionCount`, `moveQueue`, `quota`                         |
-| GET    | `/api/auth/login`     | Redirect to Google consent                                                                             |
-| GET    | `/api/auth/callback`  | OAuth callback; stores the refresh token, clears the sync cache                                        |
-| POST   | `/api/auth/logout`    | Drops the stored grant (and revokes it at Google); 204                                                 |
-| GET    | `/api/videos?limit=`  | Next _n_ **undecided** playlist videos (1–50, def 10)                                                  |
-| GET    | `/api/playlists`      | Your playlists + IDs, for picking the source                                                           |
-| POST   | `/api/decisions`      | `{ videoId, action: "keep"\|"move"\|"watch" }` — records a decision; `move` also queues a YouTube move |
-| POST   | `/api/decisions/undo` | Reverses the most recent decision; a reverted `move` queues a revert                                   |
+| Method  | Path                  | Purpose                                                                                                |
+| ------- | --------------------- | ------------------------------------------------------------------------------------------------------ |
+| GET     | `/api/health`         | Liveness, `auth` state / `writeEnabled`, `decisionCount`, `moveQueue`, `quota`                         |
+| GET     | `/api/auth/login`     | Redirect to Google consent                                                                             |
+| GET     | `/api/auth/callback`  | OAuth callback; stores the refresh token, clears the sync cache                                        |
+| POST    | `/api/auth/logout`    | Drops the stored grant (and revokes it at Google); 204                                                 |
+| GET     | `/api/videos?limit=`  | Next _n_ **undecided** videos (1–50, def 10) from the settings source playlist, in the settings order  |
+| GET     | `/api/playlists`      | Your playlists + IDs, for the pickers                                                                  |
+| GET PUT | `/api/settings`       | `{ sourcePlaylistId, downstreamPlaylistId, sortOrder }` — see below                                    |
+| POST    | `/api/decisions`      | `{ videoId, action: "keep"\|"move"\|"watch" }` — records a decision; `move` also queues a YouTube move |
+| POST    | `/api/decisions/undo` | Reverses the most recent decision; a reverted `move` queues a revert                                   |
+
+## Settings (M5)
+
+`GET` / `PUT /api/settings` holds `{ sourcePlaylistId, downstreamPlaylistId,
+sortOrder: "oldest" | "newest" }`. `YOUTUBE_PLAYLIST_ID` and
+`DOWNSTREAM_PLAYLIST_ID` seed the row the first time it's read; after that the row
+wins and the env vars are ignored. `PUT` merges a partial body (`downstreamPlaylistId:
+null` clears the move target). Changing `sourcePlaylistId` drops its cached
+`sync_state` so the next `/api/videos` does a full re-sync; queued `move_queue`
+rows keep their original playlist IDs. The web UI's settings bar drives this.
 
 ## Moving videos (M4)
 

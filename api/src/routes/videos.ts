@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { AppContext } from '../context.ts'
 import { getAuthStatus, NotAuthenticatedError } from '../auth/google.ts'
+import { getSettings } from '../settings.ts'
 import { ensureSynced } from '../youtube/sync.ts'
 
 const NOT_AUTHENTICATED = {
@@ -31,13 +32,14 @@ export function registerVideosRoute(
     '/api/videos',
     async (req, reply) => {
       const limit = parseLimit(req.query.limit)
+      const { sourcePlaylistId, sortOrder } = getSettings(ctx.db, ctx.config)
 
       if (!ctx.getYoutube() || getAuthStatus(ctx.db)?.invalidSince != null) {
         return reply.code(401).send(NOT_AUTHENTICATED)
       }
 
       try {
-        await ensureSynced(ctx, ctx.config.playlistId)
+        await ensureSynced(ctx, sourcePlaylistId)
       } catch (err) {
         if (err instanceof NotAuthenticatedError) {
           return reply.code(401).send(NOT_AUTHENTICATED)
@@ -48,15 +50,16 @@ export function registerVideosRoute(
           .send({ error: 'youtube_error', message: (err as Error).message })
       }
 
+      const direction = sortOrder === 'newest' ? 'DESC' : 'ASC'
       const rows = ctx.db
         .prepare(
           `SELECT id, title, channel, duration, thumbnail_url, url
            FROM videos
            WHERE playlist_id = ?
              AND id NOT IN (SELECT video_id FROM decisions)
-           ORDER BY position LIMIT ?`,
+           ORDER BY position ${direction} LIMIT ?`,
         )
-        .all(ctx.config.playlistId, limit) as VideoRow[]
+        .all(sourcePlaylistId, limit) as VideoRow[]
 
       return rows.map((row) => ({
         id: row.id,

@@ -6,6 +6,7 @@ import {
   undoLastDecision,
 } from '../decisions.ts'
 import { enqueueMove, enqueueRevert } from '../move-queue.ts'
+import { getSettings } from '../settings.ts'
 
 export function registerDecisionsRoute(
   app: FastifyInstance,
@@ -31,7 +32,8 @@ export function registerDecisionsRoute(
       recordDecision(ctx.db, videoId, action)
 
       if (action === 'move') {
-        const queued = enqueueMove(ctx.db, ctx.config, videoId)
+        const { downstreamPlaylistId } = getSettings(ctx.db, ctx.config)
+        const queued = enqueueMove(ctx.db, downstreamPlaylistId, videoId)
         if (queued === null) {
           req.log.warn(
             { videoId },

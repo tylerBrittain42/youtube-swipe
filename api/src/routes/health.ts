@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import type { AppContext } from '../context.ts'
 import { getAuthStatus, getStoredToken, hasWriteScope } from '../auth/google.ts'
+import { getSettings } from '../settings.ts'
 import { getSyncState } from '../youtube/sync.ts'
 import { countDecisions } from '../decisions.ts'
 import { moveQueueStatus } from '../move-queue.ts'
@@ -11,7 +12,10 @@ const DAY_MS = 24 * 60 * 60 * 1000
 type AuthState = 'connected' | 'needs_reauth' | 'logged_out'
 type ReauthReason = 'grant_invalid' | 'missing_write_scope'
 
-function describeAuth(ctx: AppContext): {
+function describeAuth(
+  ctx: AppContext,
+  downstreamPlaylistId: string | null,
+): {
   state: AuthState
   reason?: ReauthReason
   tokenAgeDays: number | null
@@ -27,7 +31,7 @@ function describeAuth(ctx: AppContext): {
   if (status?.invalidSince != null) {
     return { state: 'needs_reauth', reason: 'grant_invalid', tokenAgeDays }
   }
-  if (!hasWriteScope(token.scope) && ctx.config.downstreamPlaylistId != null) {
+  if (!hasWriteScope(token.scope) && downstreamPlaylistId != null) {
     return {
       state: 'needs_reauth',
       reason: 'missing_write_scope',
@@ -42,16 +46,20 @@ export function registerHealthRoute(
   ctx: AppContext,
 ): void {
   app.get('/api/health', () => {
-    const state = getSyncState(ctx, ctx.config.playlistId)
+    const { sourcePlaylistId, downstreamPlaylistId } = getSettings(
+      ctx.db,
+      ctx.config,
+    )
+    const state = getSyncState(ctx, sourcePlaylistId)
     const token = getStoredToken(ctx.db)
     return {
       status: 'ok',
       authenticated: token !== undefined,
       writeEnabled: hasWriteScope(token?.scope),
-      auth: describeAuth(ctx),
+      auth: describeAuth(ctx, downstreamPlaylistId),
       consentScreenTesting: ctx.config.consentScreenTesting,
-      playlistId: ctx.config.playlistId,
-      downstreamPlaylistId: ctx.config.downstreamPlaylistId,
+      playlistId: sourcePlaylistId,
+      downstreamPlaylistId,
       lastSyncedAt: state?.last_synced_at ?? null,
       decisionCount: countDecisions(ctx.db),
       moveQueue: moveQueueStatus(ctx.db),

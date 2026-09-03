@@ -13,7 +13,7 @@ describe('enqueueMove', () => {
     const ctx = makeContext({ config: { downstreamPlaylistId: 'PL_REJECT' } })
     seedVideo(ctx, { id: 'v1', position: 0, playlistId: 'PL_SRC' })
 
-    const id = enqueueMove(ctx.db, ctx.config, 'v1')
+    const id = enqueueMove(ctx.db, ctx.config.downstreamPlaylistId, 'v1')
     expect(id).not.toBeNull()
 
     const op = nextPendingOp(ctx.db)
@@ -29,12 +29,16 @@ describe('enqueueMove', () => {
   it('returns null when no downstream playlist is configured', () => {
     const ctx = makeContext({ config: { downstreamPlaylistId: null } })
     seedVideo(ctx, { id: 'v1', position: 0 })
-    expect(enqueueMove(ctx.db, ctx.config, 'v1')).toBeNull()
+    expect(
+      enqueueMove(ctx.db, ctx.config.downstreamPlaylistId, 'v1'),
+    ).toBeNull()
   })
 
   it('returns null when the video is not in the cache', () => {
     const ctx = makeContext({ config: { downstreamPlaylistId: 'PL_REJECT' } })
-    expect(enqueueMove(ctx.db, ctx.config, 'ghost')).toBeNull()
+    expect(
+      enqueueMove(ctx.db, ctx.config.downstreamPlaylistId, 'ghost'),
+    ).toBeNull()
   })
 })
 
@@ -42,7 +46,7 @@ describe('enqueueRevert', () => {
   it('swaps target/remove and supersedes a not-yet-run move', () => {
     const ctx = makeContext({ config: { downstreamPlaylistId: 'PL_REJECT' } })
     seedVideo(ctx, { id: 'v1', position: 0, playlistId: 'PL_SRC' })
-    const moveId = enqueueMove(ctx.db, ctx.config, 'v1')
+    const moveId = enqueueMove(ctx.db, ctx.config.downstreamPlaylistId, 'v1')
 
     const revertId = enqueueRevert(ctx.db, 'v1')
     expect(revertId).not.toBeNull()
@@ -64,7 +68,7 @@ describe('enqueueRevert', () => {
   it('leaves an already-done move alone but still queues the revert', () => {
     const ctx = makeContext({ config: { downstreamPlaylistId: 'PL_REJECT' } })
     seedVideo(ctx, { id: 'v1', position: 0, playlistId: 'PL_SRC' })
-    const moveId = enqueueMove(ctx.db, ctx.config, 'v1')
+    const moveId = enqueueMove(ctx.db, ctx.config.downstreamPlaylistId, 'v1')
     ctx.db
       .prepare("UPDATE move_queue SET state = 'done' WHERE id = ?")
       .run(moveId)
@@ -86,7 +90,7 @@ describe('bumpAttempt / moveQueueStatus', () => {
   it('parks an op in failed after maxAttempts and counts queue state', () => {
     const ctx = makeContext({ config: { downstreamPlaylistId: 'PL_REJECT' } })
     seedVideo(ctx, { id: 'v1', position: 0 })
-    const id = enqueueMove(ctx.db, ctx.config, 'v1')!
+    const id = enqueueMove(ctx.db, ctx.config.downstreamPlaylistId, 'v1')!
 
     bumpAttempt(ctx.db, id, 'err', 3)
     bumpAttempt(ctx.db, id, 'err', 3)

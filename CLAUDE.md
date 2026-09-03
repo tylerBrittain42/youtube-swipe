@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `youtube-swipe` is a Tinder-like swipe UI for triaging a YouTube playlist. See
 [docs/design.md](docs/design.md) and [docs/implementation-plan.md](docs/implementation-plan.md) for the
-full spec, stack rationale, and milestones. Currently in M5: UI polish — login/re-auth is done
-(auth-state gate, dead-grant detection, logout); playlist dropdowns and sort order remain.
+full spec, stack rationale, and milestones. Currently finishing M5: login/re-auth, in-app playlist
+pickers + sort order (`settings` table, `GET`/`PUT /api/settings`; env vars seed it once) are done;
+a fuller visual pass is deferred.
 
 ## Structure
 
@@ -40,6 +41,9 @@ Fastify serves the built `web/dist` same-origin.
 - **Never commit `.env` or `*.sqlite`** — both are gitignored. `api/.env.example` is the template.
 - YouTube Data API quota is 10k units/day; reads are cheap, writes are 50 each. The playlist is
   synced into SQLite and cards are served from there — don't call the YouTube API per request.
+- The source/destination playlists and deck order live in the `settings` table (`getSettings` /
+  `putSettings` in `api/src/settings.ts`), not `ctx.config` — env vars only seed the row on first
+  read. Routes that need a playlist ID call `getSettings(ctx.db, ctx.config)`.
 - Log in once by visiting `http://localhost:8080/api/auth/login` in a browser; the refresh token
   persists in `api/data/app.sqlite`. `POST /api/auth/logout` drops it.
 - Auth state is reactive, not just "is there a token row": a `invalid_grant`/401 from any YouTube
@@ -53,7 +57,7 @@ Fastify serves the built `web/dist` same-origin.
   (`api/src/youtube/mover.ts`, started from `index.ts`). Each op is an idempotent reconciler:
   insert into the target playlist, then delete from the other — crash-safe (duplicates, never drops).
   Needs the `youtube.force-ssl` scope (re-run `/api/auth/login` after upgrading from M2's
-  `youtube.readonly`) and `DOWNSTREAM_PLAYLIST_ID` set.
+  `youtube.readonly`) and a downstream playlist set in settings.
 - Quota: every billed YouTube call is counted in `quota_usage` (per US-Pacific day). The mover stops
   when `YOUTUBE_QUOTA_LIMIT` (default 9500, leaving read headroom under Google's 10k) is reached and
   resumes the next day. `/api/health` exposes `auth`, `writeEnabled`, `moveQueue`, and `quota`.
